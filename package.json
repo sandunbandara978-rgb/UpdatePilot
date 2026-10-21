@@ -1,0 +1,31 @@
+{
+  "name": "updatepilot-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "agent"
+  ],
+  "scripts": {
+    "dev": "npm --workspace=apps/web run dev",
+    "build": "cross-env NODE_OPTIONS=--max-old-space-size=4096 npm --workspace=apps/web run build",
+    "start": "npm --workspace=apps/web run start",
+    "lint": "npm --workspace=apps/web run lint",
+    "typecheck": "npm --workspace=apps/web run typecheck && npm --workspace=agent run typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "agent:dev": "npm --workspace=agent run dev",
+    "agent:build": "npm --workspace=agent run build",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:seed": "tsx prisma/seed.ts"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "prisma": "^5.21.1",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.3"
+  }
+}

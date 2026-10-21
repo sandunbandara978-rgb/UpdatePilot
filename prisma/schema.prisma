@@ -1,0 +1,207 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String        @id @default(uuid())
+  email        String        @unique
+  passwordHash String
+  name         String
+  role         String        @default("USER")
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  devices      Device[]
+  auditEvents  AuditEvent[]
+  settings     UserSetting?
+
+  @@map("users")
+}
+
+model Device {
+  id                   String            @id @default(uuid())
+  userId               String
+  user                 User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceName           String
+  osVersion            String
+  osBuild              String?
+  agentVersion         String
+  status               String            @default("ONLINE") // ONLINE, OFFLINE, REVOKED
+  lastSeenAt           DateTime          @default(now())
+  pairingCode          String?
+  pairingCodeExpiresAt DateTime?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  credentials          AgentCredential[]
+  applications         Application[]
+  scanJobs             ScanJob[]
+  updateJobs           UpdateJob[]
+  auditEvents          AuditEvent[]
+
+  @@index([userId])
+  @@index([pairingCode])
+  @@index([status])
+  @@map("devices")
+}
+
+model AgentCredential {
+  id         String    @id @default(uuid())
+  deviceId   String
+  device     Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  salt       String
+  isRevoked  Boolean   @default(false)
+  lastUsedAt DateTime  @default(now())
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([deviceId])
+  @@map("agent_credentials")
+}
+
+model Application {
+  id               String               @id @default(uuid())
+  deviceId         String
+  device           Device               @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  name             String
+  packageId        String?
+  publisher        String?
+  installedVersion String
+  availableVersion String?
+  source           String?              @default("winget")
+  status           String               @default("UP_TO_DATE") // UP_TO_DATE, UPDATE_AVAILABLE, UNKNOWN_VERSION, UNSUPPORTED, UNMATCHED
+  lastScannedAt    DateTime             @default(now())
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  updateJobs       UpdateJob[]
+  history          ApplicationHistory[]
+
+  @@unique([deviceId, name, installedVersion])
+  @@index([deviceId, status])
+  @@index([packageId])
+  @@map("applications")
+}
+
+model ReleaseMetadata {
+  id              String    @id @default(uuid())
+  packageId       String    @unique
+  latestVersion   String
+  publisherUrl    String?
+  releaseNotesUrl String?
+  license         String?
+  installerType   String?
+  sha256          String?
+  releaseDate     DateTime?
+  fetchedAt       DateTime  @default(now())
+
+  @@map("release_metadata")
+}
+
+model ScanJob {
+  id              String    @id @default(uuid())
+  deviceId        String
+  device          Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  status          String    @default("QUEUED") // QUEUED, CLAIMED, RUNNING, COMPLETED, FAILED, CANCELLED
+  appsDiscovered  Int       @default(0)
+  updatesDetected Int       @default(0)
+  errorDetails    String?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([deviceId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("scan_jobs")
+}
+
+model UpdateJob {
+  id                  String      @id @default(uuid())
+  deviceId            String
+  device              Device      @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  applicationId       String
+  application         Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  packageId           String
+  currentVersion      String
+  targetVersion       String
+  status              String      @default("QUEUED") // QUEUED, CLAIMED, RUNNING, VERIFYING, COMPLETED, FAILED, RESTART_REQUIRED, CANCELLED
+  exitCode            Int?
+  executionOutput     String?
+  verificationDetails String?
+  scheduledAt         DateTime?   @default(now())
+  startedAt           DateTime?
+  completedAt         DateTime?
+  createdAt           DateTime    @default(now())
+
+  @@index([deviceId])
+  @@index([applicationId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("update_jobs")
+}
+
+model AuditEvent {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  deviceId  String?
+  device    Device?  @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  eventType String
+  action    String
+  target    String
+  metadata  Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([deviceId])
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("audit_events")
+}
+
+model SecurityFinding {
+  id               String   @id @default(uuid())
+  packageId        String
+  cveId            String
+  summary          String
+  severity         String   // LOW, MEDIUM, HIGH, CRITICAL
+  affectedVersions String
+  fixedVersion     String?
+  advisoryUrl      String?
+  publishedAt      DateTime @default(now())
+  createdAt        DateTime @default(now())
+
+  @@index([packageId])
+  @@map("security_findings")
+}
+
+model UserSetting {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  theme              String   @default("system")
+  scanIntervalHours  Int      @default(24)
+  autoCheckUpdates   Boolean  @default(true)
+  emailAlerts        Boolean  @default(false)
+  updatedAt          DateTime @updatedAt
+
+  @@map("user_settings")
+}
+
+model ApplicationHistory {
+  id              String      @id @default(uuid())
+  applicationId   String
+  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  previousVersion String
+  newVersion      String
+  triggerType     String      @default("UPDATE")
+  changedAt       DateTime    @default(now())
+
+  @@index([applicationId])
+  @@map("application_history")
+}

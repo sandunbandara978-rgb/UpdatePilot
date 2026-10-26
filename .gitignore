@@ -34,3 +34,8 @@ Thumbs.db
 # Test coverage
 coverage/
 .nyc_output/
+
+# Local runtime storage & database cache
+data/
+apps/web/data/
+*.tsbuildinfo

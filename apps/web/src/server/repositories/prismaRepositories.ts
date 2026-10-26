@@ -189,6 +189,11 @@ export class PrismaDeviceRepository implements IDeviceRepository {
       }),
     ]);
   }
+
+  async delete(id: string): Promise<void> {
+    const db = getPrisma();
+    await db.device.delete({ where: { id } });
+  }
 }
 
 export class PrismaApplicationRepository implements IApplicationRepository {

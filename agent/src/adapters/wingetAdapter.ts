@@ -3,8 +3,8 @@ import { promisify } from 'util';
 
 const execFileAsync = promisify(execFile);
 
-// Strict regex pattern for safe package IDs (WinGet / reverse-domain format)
-export const SAFE_PACKAGE_ID_REGEX = /^[A-Za-z0-9_\-\.\+]+$/;
+// Strict regex pattern for safe package IDs (WinGet, reverse-domain, MSIX, and GUID format)
+export const SAFE_PACKAGE_ID_REGEX = /^[A-Za-z0-9_\-\.\+\\/\{\}]+$/;
 
 export interface WinGetApp {
   name: string;

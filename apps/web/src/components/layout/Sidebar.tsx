@@ -19,6 +19,7 @@ import { useMobileNav } from '@/components/layout/MobileNavContext';
 
 const navItems = [
   { name: 'Overview', href: '/', icon: LayoutDashboard },
+  { name: 'Fleet Computers', href: '/devices', icon: Laptop },
   { name: 'Applications', href: '/applications', icon: Layers },
   { name: 'Update Center', href: '/updates', icon: ArrowUpCircle },
   { name: 'Security Insights', href: '/security', icon: ShieldCheck },

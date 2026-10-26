@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   ApplicationEntity,
   DeviceEntity,
@@ -19,7 +21,20 @@ import {
 } from './types';
 import { SecurityAuth } from '../security/auth';
 
-class MemoryStore {
+function getStoragePath(): string {
+  const cwd = process.cwd();
+  let root = cwd;
+  // If cwd is apps/web, walk up to monorepo root
+  if (fs.existsSync(path.resolve(cwd, '..', '..', 'data'))) {
+    root = path.resolve(cwd, '..', '..');
+  } else if (fs.existsSync(path.resolve(cwd, '..', '..', 'package.json'))) {
+    root = path.resolve(cwd, '..', '..');
+  }
+  const dir = path.resolve(root, 'data');
+  return path.join(dir, 'updatepilot-storage.json');
+}
+
+export class MemoryStore {
   devices: Map<string, DeviceEntity> = new Map();
   credentials: Map<string, { deviceId: string; tokenHash: string; salt: string; isRevoked: boolean }> = new Map();
   applications: Map<string, ApplicationEntity> = new Map();
@@ -30,10 +45,77 @@ class MemoryStore {
   securityFindings: SecurityFindingEntity[] = [];
 
   constructor() {
-    this.seedDefaults();
+    this.loadFromDisk();
   }
 
-  private seedDefaults() {
+  saveToDisk(): void {
+    try {
+      const storageFile = getStoragePath();
+      const dir = path.dirname(storageFile);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      const serialized = {
+        devices: Array.from(this.devices.entries()),
+        credentials: Array.from(this.credentials.entries()),
+        applications: Array.from(this.applications.entries()),
+        scanJobs: Array.from(this.scanJobs.entries()),
+        updateJobs: Array.from(this.updateJobs.entries()),
+        auditEvents: this.auditEvents,
+        metadata: Array.from(this.metadata.entries()),
+        securityFindings: this.securityFindings,
+      };
+      fs.writeFileSync(storageFile, JSON.stringify(serialized, null, 2), 'utf-8');
+    } catch (err) {
+      console.warn('MemoryStore could not persist to disk:', err);
+    }
+  }
+
+  loadFromDisk(): void {
+    try {
+      const storageFile = getStoragePath();
+      if (fs.existsSync(storageFile)) {
+        const raw = fs.readFileSync(storageFile, 'utf-8');
+        const data = JSON.parse(raw);
+        if (data.devices) this.devices = new Map(data.devices);
+        if (data.credentials) this.credentials = new Map(data.credentials);
+        if (data.applications) this.applications = new Map(data.applications);
+        if (data.scanJobs) this.scanJobs = new Map(data.scanJobs);
+        if (data.updateJobs) this.updateJobs = new Map(data.updateJobs);
+        if (data.auditEvents) this.auditEvents = data.auditEvents;
+        if (data.metadata) this.metadata = new Map(data.metadata);
+        if (data.securityFindings) this.securityFindings = data.securityFindings;
+        return;
+      }
+    } catch (err) {
+      console.warn('MemoryStore failed to read storage, initializing defaults:', err);
+    }
+    this.seedDefaults();
+    this.saveToDisk();
+  }
+
+  clearDemoFixture(): boolean {
+    let removed = false;
+    if (this.devices.has('dev_win11_workstation_fixture')) {
+      this.devices.delete('dev_win11_workstation_fixture');
+      removed = true;
+    }
+    for (const [id, app] of Array.from(this.applications.entries())) {
+      if (app.deviceId === 'dev_win11_workstation_fixture') {
+        this.applications.delete(id);
+        removed = true;
+      }
+    }
+    this.saveToDisk();
+    return removed;
+  }
+
+  restoreDemoFixture(): void {
+    this.seedDefaults();
+    this.saveToDisk();
+  }
+
+  private seedDefaults(): void {
     const defaultDev: DeviceEntity = {
       id: 'dev_win11_workstation_fixture',
       userId: 'usr_default_admin',
@@ -150,7 +232,7 @@ class MemoryStore {
   }
 }
 
-const memoryStore = new MemoryStore();
+export const memoryStore = new MemoryStore();
 
 export class MemoryDeviceRepository implements IDeviceRepository {
   async findById(id: string): Promise<DeviceEntity | null> {
@@ -181,6 +263,7 @@ export class MemoryDeviceRepository implements IDeviceRepository {
       createdAt: new Date().toISOString(),
     };
     memoryStore.devices.set(id, dev);
+    memoryStore.saveToDisk();
     return dev;
   }
 
@@ -189,6 +272,7 @@ export class MemoryDeviceRepository implements IDeviceRepository {
     if (!existing) throw new Error(`Device ${id} not found`);
     const updated = { ...existing, ...data };
     memoryStore.devices.set(id, updated);
+    memoryStore.saveToDisk();
     return updated;
   }
 
@@ -197,6 +281,7 @@ export class MemoryDeviceRepository implements IDeviceRepository {
     if (dev) {
       (dev as unknown as { pairingCode: string; pairingCodeExpiresAt: string }).pairingCode = code;
       (dev as unknown as { pairingCode: string; pairingCodeExpiresAt: string }).pairingCodeExpiresAt = expiresAt.toISOString();
+      memoryStore.saveToDisk();
     }
   }
 
@@ -207,6 +292,7 @@ export class MemoryDeviceRepository implements IDeviceRepository {
       salt,
       isRevoked: false,
     });
+    memoryStore.saveToDisk();
   }
 
   async findCredentialByToken(token: string): Promise<{ deviceId: string; isRevoked: boolean } | null> {
@@ -224,7 +310,18 @@ export class MemoryDeviceRepository implements IDeviceRepository {
       dev.status = 'REVOKED';
       const cred = memoryStore.credentials.get(id);
       if (cred) cred.isRevoked = true;
+      memoryStore.saveToDisk();
     }
+  }
+
+  async delete(id: string): Promise<void> {
+    memoryStore.devices.delete(id);
+    for (const [appId, app] of Array.from(memoryStore.applications.entries())) {
+      if (app.deviceId === id) {
+        memoryStore.applications.delete(appId);
+      }
+    }
+    memoryStore.saveToDisk();
   }
 }
 
@@ -300,9 +397,13 @@ export class MemoryApplicationRepository implements IApplicationRepository {
       status: ApplicationStatus;
     }>
   ): Promise<number> {
+    // If saving apps for a real device, clean out the fixture to prevent confusion
+    if (deviceId !== 'dev_win11_workstation_fixture' && memoryStore.devices.has('dev_win11_workstation_fixture')) {
+      memoryStore.clearDemoFixture();
+    }
+
     let saved = 0;
     for (const a of apps) {
-      // Find matching existing application by name & deviceId
       let existing: ApplicationEntity | undefined;
       for (const item of Array.from(memoryStore.applications.values())) {
         if (item.deviceId === deviceId && (item.packageId === a.packageId || item.name === a.name)) {
@@ -334,6 +435,7 @@ export class MemoryApplicationRepository implements IApplicationRepository {
       }
       saved++;
     }
+    memoryStore.saveToDisk();
     return saved;
   }
 
@@ -348,6 +450,7 @@ export class MemoryApplicationRepository implements IApplicationRepository {
     app.status = status;
     if (installedVersion) app.installedVersion = installedVersion;
     if (availableVersion !== undefined) app.availableVersion = availableVersion;
+    memoryStore.saveToDisk();
     return app;
   }
 }
@@ -372,6 +475,7 @@ export class MemoryJobRepository implements IJobRepository {
       createdAt: new Date().toISOString(),
     };
     memoryStore.scanJobs.set(id, job);
+    memoryStore.saveToDisk();
     return job;
   }
 
@@ -391,6 +495,7 @@ export class MemoryJobRepository implements IJobRepository {
       createdAt: new Date().toISOString(),
     };
     memoryStore.updateJobs.set(id, job);
+    memoryStore.saveToDisk();
     return job;
   }
 
@@ -431,6 +536,7 @@ export class MemoryJobRepository implements IJobRepository {
       if (job && job.status === 'QUEUED') {
         job.status = 'CLAIMED';
         job.startedAt = new Date().toISOString();
+        memoryStore.saveToDisk();
         return true;
       }
     } else {
@@ -438,6 +544,7 @@ export class MemoryJobRepository implements IJobRepository {
       if (job && job.status === 'QUEUED') {
         job.status = 'CLAIMED';
         job.startedAt = new Date().toISOString();
+        memoryStore.saveToDisk();
         return true;
       }
     }
@@ -448,6 +555,7 @@ export class MemoryJobRepository implements IJobRepository {
     const job = memoryStore.scanJobs.get(id);
     if (job) {
       Object.assign(job, data);
+      memoryStore.saveToDisk();
     }
   }
 
@@ -455,6 +563,7 @@ export class MemoryJobRepository implements IJobRepository {
     const job = memoryStore.updateJobs.get(id);
     if (job) {
       Object.assign(job, data);
+      memoryStore.saveToDisk();
     }
   }
 
@@ -505,6 +614,7 @@ export class MemoryAuditRepository implements IAuditRepository {
       createdAt: new Date().toISOString(),
     };
     memoryStore.auditEvents.unshift(e);
+    memoryStore.saveToDisk();
   }
 
   async list(limit: number): Promise<AuditEventEntity[]> {
@@ -519,6 +629,7 @@ export class MemoryReleaseMetadataRepository implements IReleaseMetadataReposito
 
   async upsert(metadata: ReleaseMetadataEntity): Promise<void> {
     memoryStore.metadata.set(metadata.packageId, metadata);
+    memoryStore.saveToDisk();
   }
 }
 

@@ -153,4 +153,77 @@ describe('UpdatePilot End-to-End Service Integration', () => {
     expect(updatedApp?.application.status).toBe('UP_TO_DATE');
     expect(updatedApp?.application.installedVersion).toBe('8.9.8.1');
   });
+
+  it('6. Executes quick inline update without requiring explicit target version string', async () => {
+    // Add another outdated app
+    await applicationService.submitScanResults(agentToken, 'scan_test_02', [
+      {
+        name: 'VLC Media Player',
+        packageId: 'VideoLAN.VLC',
+        publisher: 'VideoLAN',
+        installedVersion: '3.0.18',
+        availableVersion: '3.0.21',
+        source: 'winget',
+      },
+    ]);
+
+    const apps = await applicationService.listApplications({
+      deviceId,
+      search: 'VLC',
+      page: 1,
+      limit: 10,
+      sortBy: 'name',
+      sortOrder: 'asc',
+    });
+    const vlc = apps.items[0];
+    expect(vlc).toBeDefined();
+    expect(vlc.status).toBe('UPDATE_AVAILABLE');
+
+    // Quick inline execution without passing acknowledgedTargetVersion
+    const job = await updateService.executeUpdate({
+      applicationId: vlc.id,
+      userId: 'usr_admin_test',
+    });
+
+    expect(job.status).toBe('QUEUED');
+    expect(job.targetVersion).toBe('3.0.21');
+
+    // Retrieve status via jobService
+    const jobStatus = await jobService.getJobStatus(job.id);
+    expect(jobStatus?.type).toBe('UPDATE');
+    expect(jobStatus?.job.id).toBe(job.id);
+  });
+
+  it('7. Authorizes and dispatches batch updates across multiple outdated software', async () => {
+    await applicationService.submitScanResults(agentToken, 'scan_test_03', [
+      {
+        name: 'Git for Windows',
+        packageId: 'Git.Git',
+        publisher: 'Git for Windows',
+        installedVersion: '2.40.0',
+        availableVersion: '2.44.0',
+        source: 'winget',
+      },
+      {
+        name: '7-Zip',
+        packageId: '7zip.7zip',
+        publisher: 'Igor Pavlov',
+        installedVersion: '23.01',
+        availableVersion: '24.01',
+        source: 'winget',
+      },
+    ]);
+
+    const batchRes = await updateService.executeBatchUpdates({
+      deviceId,
+      userId: 'usr_admin_test',
+    });
+
+    expect(batchRes.count).toBeGreaterThanOrEqual(2);
+    expect(batchRes.jobs.length).toBe(batchRes.count);
+    for (const j of batchRes.jobs) {
+      expect(j.status).toBe('QUEUED');
+      expect(j.targetVersion).toBeDefined();
+    }
+  });
 });

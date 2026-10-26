@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
 import { MobileNavProvider } from '@/components/layout/MobileNavContext';
+import { DeviceProvider } from '@/components/layout/DeviceContext';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -68,13 +69,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   // Protected App Layout
   return (
-    <MobileNavProvider>
-      <div className="flex min-h-screen">
-        <Sidebar />
-        <div className="flex-1 lg:pl-64 flex flex-col min-h-screen">
-          <main className="flex-1 pb-16">{children}</main>
+    <DeviceProvider>
+      <MobileNavProvider>
+        <div className="flex min-h-screen">
+          <Sidebar />
+          <div className="flex-1 lg:pl-64 flex flex-col min-h-screen">
+            <main className="flex-1 pb-16">{children}</main>
+          </div>
         </div>
-      </div>
-    </MobileNavProvider>
+      </MobileNavProvider>
+    </DeviceProvider>
   );
 }

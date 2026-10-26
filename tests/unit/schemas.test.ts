@@ -13,6 +13,8 @@ describe('Shared Zod Schemas Validation', () => {
     expect(SAFE_PACKAGE_ID_REGEX.test('Google.Chrome')).toBe(true);
     expect(SAFE_PACKAGE_ID_REGEX.test('Microsoft.VisualStudioCode')).toBe(true);
     expect(SAFE_PACKAGE_ID_REGEX.test('7zip.7zip')).toBe(true);
+    expect(SAFE_PACKAGE_ID_REGEX.test('MSIX\\Microsoft.AVCEncoderVideoExtension_1.1.47.0_x64__8wekyb3d8bbwe')).toBe(true);
+    expect(SAFE_PACKAGE_ID_REGEX.test('{F4786A00-84C0-466D-A08D-7323A50B01D5}')).toBe(true);
 
     // Injection attempts must fail
     expect(SAFE_PACKAGE_ID_REGEX.test('pkg & calc.exe')).toBe(false);

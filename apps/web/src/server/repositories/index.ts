@@ -52,3 +52,5 @@ export const releaseMetadataRepo: IReleaseMetadataRepository = hasDatabase
 export const securityRepo: ISecurityRepository = hasDatabase
   ? new PrismaSecurityRepository()
   : new MemorySecurityRepository();
+
+export { memoryStore } from './memoryStore';

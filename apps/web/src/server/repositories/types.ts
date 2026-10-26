@@ -20,6 +20,7 @@ export interface IDeviceRepository {
   createCredential(deviceId: string, tokenHash: string, salt: string): Promise<void>;
   findCredentialByToken(token: string): Promise<{ deviceId: string; isRevoked: boolean } | null>;
   revoke(id: string): Promise<void>;
+  delete?(id: string): Promise<void>;
 }
 
 export interface IApplicationRepository {

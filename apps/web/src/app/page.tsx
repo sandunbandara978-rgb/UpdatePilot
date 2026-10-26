@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { Navbar } from '@/components/layout/Navbar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { ConnectAgentModal } from '@/components/features/ConnectAgentModal';
 import { OverviewCharts } from '@/components/features/OverviewCharts';
+import { OutdatedSoftwareHub } from '@/components/features/OutdatedSoftwareHub';
+import { useDeviceContext } from '@/components/layout/DeviceContext';
 import { DashboardMetrics } from '@updatepilot/shared';
 import { formatDate, formatRelativeTime } from '@/lib/utils';
 import {
@@ -20,6 +22,9 @@ import {
   ExternalLink,
   ShieldCheck,
   Activity,
+  Sparkles,
+  Server,
+  ArrowRight,
 } from 'lucide-react';
 
 export default function DashboardOverviewPage() {
@@ -27,10 +32,18 @@ export default function DashboardOverviewPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
+  const [scanMessage, setScanMessage] = useState<string | null>(null);
 
-  const fetchDashboardData = async () => {
+  const { devices, selectedDeviceId, setSelectedDeviceId, activeDevice, refreshDevices } = useDeviceContext();
+
+  const fetchDashboardData = useCallback(async () => {
+    setIsLoading(true);
     try {
-      const res = await fetch('/api/v1/dashboard');
+      const url =
+        selectedDeviceId && selectedDeviceId !== 'ALL'
+          ? `/api/v1/dashboard?deviceId=${selectedDeviceId}`
+          : '/api/v1/dashboard';
+      const res = await fetch(url);
       const data = await res.json();
       if (data.success) {
         setMetrics(data.data);
@@ -40,30 +53,41 @@ export default function DashboardOverviewPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [selectedDeviceId]);
 
   useEffect(() => {
     fetchDashboardData();
-  }, []);
+  }, [fetchDashboardData]);
 
   const handleScanNow = async () => {
     setIsScanning(true);
+    setScanMessage(null);
     try {
-      // Find active device to trigger scan
-      const devRes = await fetch('/api/v1/devices');
-      const devData = await devRes.json();
-      if (devData.success && devData.data.devices.length > 0) {
-        const deviceId = devData.data.devices[0].id;
-        await fetch(`/api/v1/devices/${deviceId}/scans`, { method: 'POST' });
+      // 1. If scanning local host or all computers: run direct local scan
+      if (
+        selectedDeviceId === 'ALL' ||
+        selectedDeviceId.startsWith('dev_local_') ||
+        activeDevice?.deviceName.includes('(This PC)')
+      ) {
+        const res = await fetch('/api/v1/system/scan-local', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          setScanMessage(`Discovered ${data.data.appsSaved} applications (${data.data.updatesCount} updates) on ${data.data.deviceName}!`);
+        }
+      } else if (selectedDeviceId) {
+        await fetch(`/api/v1/devices/${selectedDeviceId}/scans`, { method: 'POST' });
+        setScanMessage(`Scan job dispatched to ${activeDevice?.deviceName}.`);
       }
-      setTimeout(async () => {
-        await fetchDashboardData();
-        setIsScanning(false);
-      }, 1500);
-    } catch {
+      await refreshDevices();
+      await fetchDashboardData();
+    } catch (err) {
+      console.error('Scan failed:', err);
+    } finally {
       setIsScanning(false);
     }
   };
+
+  const hasDemoFixture = devices.some((d) => d.id === 'dev_win11_workstation_fixture');
 
   return (
     <div>
@@ -73,27 +97,62 @@ export default function DashboardOverviewPage() {
         isScanning={isScanning}
       />
 
-      <div className="p-6 sm:p-8 max-w-7xl mx-auto space-y-8">
+      <div className="p-6 sm:p-8 max-w-7xl mx-auto space-y-6">
+        {/* Banner if Demo Fixture is currently displayed */}
+        {hasDemoFixture && (
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-brand-500/10 via-brand-500/5 to-transparent border border-brand-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-xl bg-brand-500/20 text-brand-600 dark:text-brand-400 flex items-center justify-center flex-shrink-0">
+                <Sparkles className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-foreground">
+                  Ready to discover real software on your Windows computer?
+                </h4>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Currently showing mock demo data. Click below to inspect your real installed WinGet packages and official release updates.
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleScanNow}
+              isLoading={isScanning}
+              className="gap-2 text-xs flex-shrink-0 shadow-md shadow-brand-500/20"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              <span>Scan This Computer Now</span>
+            </Button>
+          </div>
+        )}
+
+        {scanMessage && (
+          <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+            <span>{scanMessage}</span>
+          </div>
+        )}
+
         {/* Page Title & Status */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
-              Overview Dashboard
+              {activeDevice ? activeDevice.deviceName : 'Fleet Overview Dashboard'}
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Live intelligence and package security for your connected Windows host.
+              {activeDevice
+                ? `Live software intelligence and package security for ${activeDevice.deviceName}.`
+                : `Live software intelligence across all ${devices.length} registered Windows hosts in your fleet.`}
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsConnectModalOpen(true)}
-              className="gap-2"
-            >
-              <Laptop className="h-4 w-4 text-brand-500" />
-              <span>Pair Local Host</span>
-            </Button>
+            <Link href="/devices">
+              <Button variant="outline" size="sm" className="gap-2">
+                <Server className="h-4 w-4 text-brand-500" />
+                <span>Manage Fleet ({devices.length})</span>
+              </Button>
+            </Link>
             <Button
               variant="primary"
               size="sm"
@@ -102,131 +161,132 @@ export default function DashboardOverviewPage() {
               className="gap-2"
             >
               <RefreshCw className="h-4 w-4" />
-              <span>Run Discovery</span>
+              <span>{isScanning ? 'Inspecting WinGet...' : 'Run Discovery'}</span>
             </Button>
           </div>
         </div>
 
         {/* 4 Primary Metric Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="hover:border-border/80 transition-all">
+          <Card className="hover:border-brand-500/40 transition-colors">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Total Installed
-              </span>
-              <div className="h-8 w-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-                <Layers className="h-4 w-4" />
-              </div>
+              <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Total Software
+              </CardTitle>
+              <Layers className="h-4 w-4 text-brand-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-extrabold text-foreground">
-                {isLoading ? '...' : metrics?.totalApplications ?? 0}
+              <div className="text-3xl font-black tracking-tight text-foreground">
+                {isLoading ? '—' : metrics?.totalApplications ?? 0}
               </div>
-              <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                <span>Discovered on Windows host</span>
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Discovered on {activeDevice ? activeDevice.deviceName : 'all fleet hosts'}
               </p>
             </CardContent>
           </Card>
 
-          <Card className="hover:border-blue-500/30 transition-all">
+          <Card className="hover:border-blue-500/40 transition-colors">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
+              <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Updates Available
-              </span>
-              <div className="h-8 w-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-                <ArrowUpCircle className="h-4 w-4" />
-              </div>
+              </CardTitle>
+              <ArrowUpCircle className="h-4 w-4 text-blue-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-extrabold text-blue-600 dark:text-blue-400">
-                {isLoading ? '...' : metrics?.updatesAvailable ?? 0}
+              <div className="text-3xl font-black tracking-tight text-blue-600 dark:text-blue-400">
+                {isLoading ? '—' : metrics?.updatesAvailable ?? 0}
               </div>
-              <p className="text-xs text-muted-foreground mt-1 flex items-center justify-between">
-                <span>Ready for user review</span>
-                <Link href="/updates" className="text-blue-600 dark:text-blue-400 font-semibold hover:underline">
-                  Review &rarr;
-                </Link>
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Verified upstream releases pending
               </p>
             </CardContent>
           </Card>
 
-          <Card className="hover:border-border/80 transition-all">
+          <Card className="hover:border-emerald-500/40 transition-colors">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
+              <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Up to Date
-              </span>
-              <div className="h-8 w-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                <CheckCircle2 className="h-4 w-4" />
-              </div>
+              </CardTitle>
+              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-extrabold text-emerald-600 dark:text-emerald-400">
-                {isLoading ? '...' : metrics?.upToDate ?? 0}
+              <div className="text-3xl font-black tracking-tight text-emerald-600 dark:text-emerald-400">
+                {isLoading ? '—' : metrics?.upToDate ?? 0}
               </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Verified with official catalogs
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Matching verified latest versions
               </p>
             </CardContent>
           </Card>
 
-          <Card className="hover:border-border/80 transition-all">
+          <Card className="hover:border-amber-500/40 transition-colors">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Unsupported / Other
-              </span>
-              <div className="h-8 w-8 rounded-lg bg-gray-500/10 text-gray-500 flex items-center justify-center">
-                <AlertCircle className="h-4 w-4" />
-              </div>
+              <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Active Hosts
+              </CardTitle>
+              <Laptop className="h-4 w-4 text-amber-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-extrabold text-foreground">
-                {isLoading ? '...' : (metrics?.unsupported ?? 0) + (metrics?.unknown ?? 0)}
+              <div className="text-3xl font-black tracking-tight text-amber-600 dark:text-amber-400">
+                {isLoading ? '—' : metrics?.activeDevicesCount ?? devices.filter((d) => d.status === 'ONLINE').length}
               </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Custom or proprietary software
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Windows machines connected
               </p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Host Status & Quick Actions Banner */}
-        <div className="p-6 rounded-2xl bg-gradient-to-r from-card to-muted/30 border border-border/80 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-sm">
-          <div className="flex items-center gap-4">
-            <div className="h-12 w-12 rounded-2xl bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center shadow-inner">
-              <Laptop className="h-6 w-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-bold text-foreground text-base">Windows 11 Machine</h3>
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Active
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Last inventory scan:{' '}
-                <span className="font-medium text-foreground">
-                  {formatRelativeTime(metrics?.lastScanTimestamp)} ({formatDate(metrics?.lastScanTimestamp)})
-                </span>
-              </p>
-            </div>
-          </div>
+        {/* Outdated Applications & Updates Pending Hub */}
+        <OutdatedSoftwareHub
+          devices={devices}
+          selectedDeviceId={selectedDeviceId}
+          onDeviceChange={setSelectedDeviceId}
+          onUpdated={async () => {
+            await refreshDevices();
+            await fetchDashboardData();
+          }}
+        />
 
-          <div className="flex items-center gap-3 w-full md:w-auto">
-            <Link href="/applications" className="w-full md:w-auto">
-              <Button variant="outline" size="sm" className="w-full gap-2">
-                <Layers className="h-3.5 w-3.5" />
-                <span>View Inventory</span>
-              </Button>
-            </Link>
-            <Link href="/updates" className="w-full md:w-auto">
-              <Button variant="primary" size="sm" className="w-full gap-2">
-                <ArrowUpCircle className="h-3.5 w-3.5" />
-                <span>Available Updates ({metrics?.updatesAvailable ?? 0})</span>
-              </Button>
-            </Link>
-          </div>
-        </div>
+        {/* Fleet Computers Quick Overview */}
+        {devices.length > 0 && (
+          <Card className="p-4 bg-card/60 border-border/80">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+              <div className="flex items-center gap-2">
+                <Laptop className="h-4 w-4 text-brand-500" />
+                <span className="font-bold text-sm text-foreground">Registered Windows Computers</span>
+                <span className="text-xs text-muted-foreground">({devices.length})</span>
+              </div>
+              <Link href="/devices" className="text-xs text-brand-600 hover:underline flex items-center gap-1">
+                <span>View Full Fleet Management</span>
+                <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {devices.map((dev) => (
+                <div
+                  key={dev.id}
+                  className="p-3 rounded-xl border border-border/60 bg-muted/20 flex items-center justify-between gap-3"
+                >
+                  <div className="space-y-0.5 truncate">
+                    <span className="font-semibold text-xs text-foreground block truncate" title={dev.deviceName}>
+                      {dev.deviceName}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground block truncate">
+                      {dev.osVersion || 'Windows 11'}
+                    </span>
+                  </div>
+                  <span
+                    className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${
+                      dev.status === 'ONLINE' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
+                    }`}
+                    title={dev.status}
+                  />
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
 
         {/* Visual Analytics & Distribution Charts */}
         <OverviewCharts metrics={metrics} isLoading={isLoading} />
@@ -249,7 +309,7 @@ export default function DashboardOverviewPage() {
                   <div className="p-8 text-center text-xs text-muted-foreground">Loading activity...</div>
                 ) : !metrics?.recentActivity || metrics.recentActivity.length === 0 ? (
                   <div className="p-8 text-center text-xs text-muted-foreground">
-                    No recent update operations recorded yet. Run a discovery scan to begin.
+                    No recent update operations recorded yet. Click &quot;Run Discovery&quot; above to scan installed software.
                   </div>
                 ) : (
                   <div className="divide-y divide-border/60">
@@ -309,7 +369,10 @@ export default function DashboardOverviewPage() {
       <ConnectAgentModal
         isOpen={isConnectModalOpen}
         onClose={() => setIsConnectModalOpen(false)}
-        onPairedSuccess={fetchDashboardData}
+        onPairedSuccess={async () => {
+          await refreshDevices();
+          await fetchDashboardData();
+        }}
       />
     </div>
   );

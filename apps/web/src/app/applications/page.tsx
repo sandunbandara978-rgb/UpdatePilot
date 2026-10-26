@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Navbar } from '@/components/layout/Navbar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { ApplicationDetailModal } from '@/components/features/ApplicationDetailModal';
 import { UpdatePreviewModal } from '@/components/features/UpdatePreviewModal';
 import { ConnectAgentModal } from '@/components/features/ConnectAgentModal';
+import { useDeviceContext } from '@/components/layout/DeviceContext';
 import { ApplicationEntity, ApplicationStatus } from '@updatepilot/shared';
 import { formatDate } from '@/lib/utils';
 import {
@@ -19,9 +20,11 @@ import {
   Eye,
   Download,
   CheckCircle2,
+  Laptop,
 } from 'lucide-react';
 
 export default function ApplicationsPage() {
+  const { devices, selectedDeviceId, setSelectedDeviceId } = useDeviceContext();
   const [apps, setApps] = useState<ApplicationEntity[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -37,6 +40,15 @@ export default function ApplicationsPage() {
   const [appToUpdate, setAppToUpdate] = useState<ApplicationEntity | null>(null);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
 
+  // Map device IDs to readable names
+  const deviceMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const d of devices) {
+      map[d.id] = d.deviceName;
+    }
+    return map;
+  }, [devices]);
+
   const fetchApplications = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -45,6 +57,7 @@ export default function ApplicationsPage() {
         limit: '15',
         sortBy,
         sortOrder,
+        ...(selectedDeviceId !== 'ALL' ? { deviceId: selectedDeviceId } : {}),
         ...(search ? { search } : {}),
         ...(statusFilter !== 'ALL' ? { status: statusFilter } : {}),
       });
@@ -61,11 +74,15 @@ export default function ApplicationsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [page, search, statusFilter, sortBy, sortOrder]);
+  }, [page, search, statusFilter, sortBy, sortOrder, selectedDeviceId]);
 
   useEffect(() => {
     fetchApplications();
   }, [fetchApplications]);
+
+  const exportUrl = `/api/v1/history/export?type=applications${
+    selectedDeviceId !== 'ALL' ? `&deviceId=${selectedDeviceId}` : ''
+  }`;
 
   return (
     <div>
@@ -79,10 +96,10 @@ export default function ApplicationsPage() {
               Application Inventory
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Discovered installed software, version manifests, and trusted update sources.
+              Discovered installed software, version manifests, and trusted update sources across your fleet.
             </p>
           </div>
-          <a href="/api/v1/history/export?type=applications" download="updatepilot-applications.csv">
+          <a href={exportUrl} download="updatepilot-applications.csv">
             <Button variant="outline" size="sm" className="gap-2">
               <Download className="h-4 w-4" />
               <span>Export CSV</span>
@@ -108,6 +125,26 @@ export default function ApplicationsPage() {
               />
             </div>
 
+            {/* Filter by Computer */}
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              <Laptop className="h-4 w-4 text-muted-foreground" />
+              <select
+                value={selectedDeviceId}
+                onChange={(e) => {
+                  setSelectedDeviceId(e.target.value);
+                  setPage(1);
+                }}
+                className="px-3 py-2 rounded-lg bg-background border border-border/70 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer font-semibold"
+              >
+                <option value="ALL">All Computers ({devices.length})</option>
+                {devices.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.deviceName}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* Filter by Status */}
             <div className="flex items-center gap-2 w-full md:w-auto">
               <Filter className="h-4 w-4 text-muted-foreground" />
@@ -117,38 +154,36 @@ export default function ApplicationsPage() {
                   setStatusFilter(e.target.value);
                   setPage(1);
                 }}
-                className="py-2 px-3 rounded-lg bg-background border border-border/70 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="px-3 py-2 rounded-lg bg-background border border-border/70 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer"
               >
-                <option value="ALL">All Statuses ({total})</option>
+                <option value="ALL">All Statuses</option>
                 <option value="UPDATE_AVAILABLE">Update Available</option>
                 <option value="UP_TO_DATE">Up to Date</option>
-                <option value="UNKNOWN_VERSION">Unknown Version</option>
-                <option value="UNSUPPORTED">Unsupported</option>
                 <option value="UNMATCHED">Unmatched</option>
+                <option value="UNSUPPORTED">Unsupported</option>
               </select>
+            </div>
 
-              {/* Sort By */}
-              <div className="flex items-center gap-1">
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                  className="py-2 px-3 rounded-lg bg-background border border-border/70 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand-500"
-                >
-                  <option value="name">Sort by Name</option>
-                  <option value="publisher">Sort by Publisher</option>
-                  <option value="installedVersion">Sort by Version</option>
-                  <option value="status">Sort by Status</option>
-                </select>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
-                  className="px-2"
-                  title="Toggle Ascending/Descending"
-                >
-                  <ArrowUpDown className="h-4 w-4" />
-                </Button>
-              </div>
+            {/* Sort Dropdown */}
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="px-3 py-2 rounded-lg bg-background border border-border/70 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer"
+              >
+                <option value="name">Software Name</option>
+                <option value="installedVersion">Installed Version</option>
+                <option value="status">Status</option>
+              </select>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                className="h-9 px-2.5 text-xs font-semibold"
+              >
+                {sortOrder.toUpperCase()}
+              </Button>
             </div>
           </div>
         </Card>
@@ -160,6 +195,7 @@ export default function ApplicationsPage() {
               <thead>
                 <tr className="border-b border-border bg-muted/30 text-muted-foreground font-semibold uppercase tracking-wider">
                   <th className="py-3.5 px-4">Software Name</th>
+                  <th className="py-3.5 px-4">Computer</th>
                   <th className="py-3.5 px-4">Package ID</th>
                   <th className="py-3.5 px-4">Publisher</th>
                   <th className="py-3.5 px-4">Installed</th>
@@ -171,13 +207,13 @@ export default function ApplicationsPage() {
               <tbody className="divide-y divide-border/60">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center text-muted-foreground">
+                    <td colSpan={8} className="py-12 text-center text-muted-foreground">
                       Loading inventory...
                     </td>
                   </tr>
                 ) : apps.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center text-muted-foreground">
+                    <td colSpan={8} className="py-12 text-center text-muted-foreground">
                       No applications matched your filter criteria.
                     </td>
                   </tr>
@@ -191,6 +227,12 @@ export default function ApplicationsPage() {
                             {app.name}
                           </span>
                         </div>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-muted/60 text-foreground font-medium text-[11px] truncate max-w-[130px]" title={deviceMap[app.deviceId] || app.deviceId}>
+                          <Laptop className="h-3 w-3 text-brand-500 flex-shrink-0" />
+                          <span className="truncate">{deviceMap[app.deviceId] || 'This Host'}</span>
+                        </span>
                       </td>
                       <td className="py-3.5 px-4 font-mono text-[11px] text-muted-foreground">
                         <span className="truncate max-w-[180px] block" title={app.packageId || 'Unmatched'}>
@@ -248,25 +290,27 @@ export default function ApplicationsPage() {
           <div className="flex items-center justify-between p-4 border-t border-border/60 text-xs text-muted-foreground">
             <div>
               Showing <span className="font-semibold text-foreground">{apps.length}</span> of{' '}
-              <span className="font-semibold text-foreground">{total}</span> applications
+              <span className="font-semibold text-foreground">{total}</span> total applications
             </div>
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
-                disabled={page <= 1}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1 || isLoading}
+                className="h-8 px-3"
               >
                 Previous
               </Button>
-              <span className="px-2">
+              <span className="text-xs font-semibold px-2">
                 Page {page} of {totalPages}
               </span>
               <Button
                 variant="outline"
                 size="sm"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages || isLoading}
+                className="h-8 px-3"
               >
                 Next
               </Button>
@@ -275,17 +319,22 @@ export default function ApplicationsPage() {
         </Card>
       </div>
 
+      {/* Application Detail Modal */}
       <ApplicationDetailModal
         isOpen={Boolean(selectedAppId)}
-        onClose={() => setSelectedAppId(null)}
         applicationId={selectedAppId}
+        onClose={() => setSelectedAppId(null)}
       />
 
+      {/* Update Preview & Confirmation Gate Modal */}
       <UpdatePreviewModal
         isOpen={Boolean(appToUpdate)}
-        onClose={() => setAppToUpdate(null)}
         application={appToUpdate}
-        onUpdateCompleted={fetchApplications}
+        onClose={() => setAppToUpdate(null)}
+        onUpdateCompleted={() => {
+          setAppToUpdate(null);
+          fetchApplications();
+        }}
       />
 
       <ConnectAgentModal

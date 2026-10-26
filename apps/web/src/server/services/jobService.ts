@@ -101,8 +101,9 @@ export class JobService {
     return null;
   }
 
-  async getDashboardMetrics(): Promise<DashboardMetrics> {
+  async getDashboardMetrics(deviceId?: string): Promise<DashboardMetrics> {
     const allAppsRes = await applicationRepo.list({
+      deviceId: deviceId && deviceId !== 'ALL' ? deviceId : undefined,
       page: 1,
       limit: 1000,
       sortBy: 'name',

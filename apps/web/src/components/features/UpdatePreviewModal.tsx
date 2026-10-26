@@ -65,8 +65,10 @@ export function UpdatePreviewModal({ isOpen, onClose, application, onUpdateCompl
         const data = await res.json();
         if (data.success && data.data.job) {
           const currentStatus: JobStatus = data.data.job.status;
-          setJobStatus(currentStatus);
-          setJobLogs(data.data.job.verificationDetails || data.data.job.executionOutput || null);
+          const fullLogs = [data.data.job.executionOutput, data.data.job.verificationDetails]
+            .filter(Boolean)
+            .join('\n\n--- Verification Details ---\n');
+          setJobLogs(fullLogs || null);
 
           if (currentStatus === 'COMPLETED' || currentStatus === 'FAILED' || currentStatus === 'RESTART_REQUIRED') {
             clearInterval(interval);

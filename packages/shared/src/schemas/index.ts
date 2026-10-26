@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-// Strict regex pattern for safe package IDs (WinGet / reverse-domain format)
-export const SAFE_PACKAGE_ID_REGEX = /^[A-Za-z0-9_\-\.\+]+$/;
+// Strict regex pattern for safe package IDs (WinGet, reverse-domain, MSIX, and GUID format)
+export const SAFE_PACKAGE_ID_REGEX = /^[A-Za-z0-9_\-\.\+\\/\{\}]+$/;
 
 export const PairingCodeGenerateSchema = z.object({
   deviceId: z.string().optional(),
@@ -41,7 +41,7 @@ export const UpdatePreviewRequestSchema = z.object({
 
 export const UpdateExecuteRequestSchema = z.object({
   confirmed: z.literal(true),
-  acknowledgedTargetVersion: z.string().min(1),
+  acknowledgedTargetVersion: z.string().min(1).optional(),
 });
 
 export const AgentJobReportSchema = z.object({

@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "dev": "npm --workspace=apps/web run dev",
-    "build": "cross-env NODE_OPTIONS=--max-old-space-size=4096 npm --workspace=apps/web run build",
+    "build": "prisma generate && npm --workspace=packages/shared run build && cross-env NODE_OPTIONS=--max-old-space-size=4096 npm --workspace=apps/web run build",
     "start": "npm --workspace=apps/web run start",
     "lint": "npm --workspace=apps/web run lint",
     "typecheck": "npm --workspace=apps/web run typecheck && npm --workspace=agent run typecheck",

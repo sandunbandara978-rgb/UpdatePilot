@@ -81,7 +81,8 @@ export class WinGetAdapter {
    * Parses the tabular text output of `winget list`
    */
   parseListOutput(output: string): WinGetApp[] {
-    const lines = output.split(/\r?\n/);
+    const cleanOutput = output.replace(/\r(?!\n)/g, '\n');
+    const lines = cleanOutput.split(/\r?\n/);
     const apps: WinGetApp[] = [];
 
     // Find the header separator line containing dashes (e.g. "-------------------")
@@ -149,7 +150,7 @@ export class WinGetAdapter {
 
       if (name && version) {
         // Filter out ARP noise or clean package IDs
-        if (packageId && packageId.startsWith('ARP\\')) {
+        if (packageId && (packageId.startsWith('ARP\\') || !SAFE_PACKAGE_ID_REGEX.test(packageId))) {
           packageId = undefined; // Not an official winget package ID
         }
 

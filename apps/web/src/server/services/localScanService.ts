@@ -148,7 +148,8 @@ export class LocalScanService {
     availableVersion?: string | null;
     source?: string | null;
   }> {
-    const lines = output.split(/\r?\n/);
+    const cleanOutput = output.replace(/\r(?!\n)/g, '\n');
+    const lines = cleanOutput.split(/\r?\n/);
     const apps: Array<{
       name: string;
       packageId?: string | null;

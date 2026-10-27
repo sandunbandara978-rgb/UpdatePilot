@@ -39,3 +39,4 @@ coverage/
 data/
 apps/web/data/
 *.tsbuildinfo
+.vercel

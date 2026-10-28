@@ -11,7 +11,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [isInitializing, setIsInitializing] = useState(true);
+  const [isPlayingAppleAnimation, setIsPlayingAppleAnimation] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  useEffect(() => {
+    // Listen for custom trigger to replay Apple Mac boot animation anytime
+    const handleTrigger = () => {
+      setIsPlayingAppleAnimation(true);
+    };
+    window.addEventListener('trigger-apple-animation', handleTrigger);
+    return () => window.removeEventListener('trigger-apple-animation', handleTrigger);
+  }, []);
 
   useEffect(() => {
     // If on login page, skip loading screen and render immediately
@@ -39,13 +49,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           return;
         }
       } catch {
-        // If error or offline, fallback to dev fixture session
+        // If error or offline, fallback to dev session
         setIsAuthenticated(true);
       } finally {
-        // Brief smooth timeout so the animated load screen displays gracefully
+        // Graceful duration so the Apple Mac loading animation plays smoothly
         setTimeout(() => {
           setIsInitializing(false);
-        }, 650);
+        }, 850);
       }
     };
 
@@ -57,12 +67,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
-  // Load screen with simple animation
-  if (isInitializing) {
+  // Apple Mac Style Boot / Loading screen
+  if (isInitializing || isPlayingAppleAnimation) {
     return (
       <LoadingScreen
-        message="Initializing Update Intelligence Engine..."
-        subMessage="Validating host credentials and software catalogs"
+        message="UpdatePilot macOS Intelligence"
+        subMessage="Validating host credentials & WinGet catalog"
+        onFinish={() => {
+          setIsInitializing(false);
+          setIsPlayingAppleAnimation(false);
+        }}
       />
     );
   }

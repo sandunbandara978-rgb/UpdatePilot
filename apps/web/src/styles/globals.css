@@ -4,50 +4,51 @@
 
 @layer base {
   :root {
-    --background: #f8fafc;
-    --foreground: #0f172a;
+    /* Apple Clean White Studio Aesthetic */
+    --background: #fbfbfd;
+    --foreground: #1d1d1f;
     --card: #ffffff;
-    --card-foreground: #0f172a;
+    --card-foreground: #1d1d1f;
     --popover: #ffffff;
-    --popover-foreground: #0f172a;
-    --primary: #006ac8;
+    --popover-foreground: #1d1d1f;
+    --primary: #0071e3;
     --primary-foreground: #ffffff;
-    --primary-hover: #0154a2;
-    --secondary: #f1f5f9;
-    --secondary-foreground: #1e293b;
-    --muted: #f1f5f9;
-    --muted-foreground: #64748b;
-    --accent: #f8fafc;
-    --accent-foreground: #0f172a;
-    --destructive: #ef4444;
+    --primary-hover: #0077ed;
+    --secondary: #f5f5f7;
+    --secondary-foreground: #1d1d1f;
+    --muted: #f5f5f7;
+    --muted-foreground: #86868b;
+    --accent: #f5f5f7;
+    --accent-foreground: #1d1d1f;
+    --destructive: #ff3b30;
     --destructive-foreground: #ffffff;
-    --border: #e2e8f0;
-    --input: #e2e8f0;
-    --ring: #006ac8;
-    --radius: 0.5rem;
+    --border: rgba(0, 0, 0, 0.07);
+    --input: rgba(0, 0, 0, 0.08);
+    --ring: #0071e3;
+    --radius: 0.85rem;
   }
 
   .dark {
-    --background: #090d16;
-    --foreground: #f8fafc;
-    --card: #111827;
-    --card-foreground: #f8fafc;
-    --popover: #111827;
-    --popover-foreground: #f8fafc;
-    --primary: #36a3fa;
-    --primary-foreground: #07264a;
-    --primary-hover: #7cc3fd;
-    --secondary: #1f2937;
-    --secondary-foreground: #f8fafc;
-    --muted: #1e293b;
-    --muted-foreground: #94a3b8;
-    --accent: #1e293b;
-    --accent-foreground: #f8fafc;
-    --destructive: #dc2626;
+    --background: #000000;
+    --foreground: #f5f5f7;
+    --card: #161617;
+    --card-foreground: #f5f5f7;
+    --popover: #161617;
+    --popover-foreground: #f5f5f7;
+    --primary: #2997ff;
+    --primary-foreground: #000000;
+    --primary-hover: #47a7ff;
+    --secondary: #1d1d1f;
+    --secondary-foreground: #f5f5f7;
+    --muted: #1d1d1f;
+    --muted-foreground: #86868b;
+    --accent: #1d1d1f;
+    --accent-foreground: #f5f5f7;
+    --destructive: #ff453a;
     --destructive-foreground: #ffffff;
-    --border: #1f2937;
-    --input: #1f2937;
-    --ring: #36a3fa;
+    --border: rgba(255, 255, 255, 0.12);
+    --input: rgba(255, 255, 255, 0.14);
+    --ring: #2997ff;
   }
 }
 
@@ -56,26 +57,97 @@ body {
   color: var(--foreground);
   font-feature-settings: "rlig" 1, "calt" 1;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.011em;
 }
 
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* Apple Frosted Glass and Card Utilities */
+.apple-glass {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(0, 0, 0, 0.06);
 }
+
+.dark .apple-glass {
+  background: rgba(22, 22, 23, 0.8);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.apple-spring {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.apple-card-hover {
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.apple-card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(0, 0, 0, 0.02);
+}
+
+/* Custom Minimalist Apple Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.3);
-  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 9999px;
 }
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+}
+
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.6);
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
 }
 
 @keyframes progress {
-  0% { transform: translateX(-100%); }
-  50% { transform: translateX(30%); }
-  100% { transform: translateX(200%); }
+  0% {
+    transform: translateX(-100%);
+  }
+
+  50% {
+    transform: translateX(30%);
+  }
+
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+@keyframes appleBootProgress {
+  0% {
+    width: 0%;
+  }
+
+  25% {
+    width: 35%;
+  }
+
+  60% {
+    width: 70%;
+  }
+
+  85% {
+    width: 92%;
+  }
+
+  100% {
+    width: 100%;
+  }
 }

@@ -51,7 +51,7 @@ module.exports = {
           200: '#b9dffe',
           300: '#7cc3fd',
           400: '#36a3fa',
-          500: '#0c87eb',
+          500: '#0071e3', // Apple signature blue
           600: '#006ac8',
           700: '#0154a2',
           800: '#064785',
@@ -59,17 +59,53 @@ module.exports = {
           950: '#07264a',
         },
         status: {
-          success: '#10b981',
-          warning: '#f59e0b',
-          error: '#ef4444',
-          info: '#3b82f6',
-          neutral: '#6b7280',
+          success: '#34c759', // Apple system green
+          warning: '#ff9500', // Apple system orange
+          error: '#ff3b30',   // Apple system red
+          info: '#0071e3',    // Apple system blue
+          neutral: '#8e8e93', // Apple system gray
         },
       },
       borderRadius: {
+        '3xl': '1.5rem',
+        '2xl': '1.25rem',
+        xl: '1rem',
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
+      },
+      boxShadow: {
+        'apple': '0 4px 20px -2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02)',
+        'apple-hover': '0 20px 40px -12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.02)',
+        'apple-glass': '0 8px 32px 0 rgba(0, 0, 0, 0.04)',
+        'apple-glow': '0 0 35px -5px rgba(0, 113, 227, 0.25)',
+      },
+      transitionTimingFunction: {
+        'apple': 'cubic-bezier(0.16, 1, 0.3, 1)',
+      },
+      animation: {
+        'apple-fade-in': 'appleFadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+        'apple-shimmer': 'appleShimmer 3s ease-in-out infinite',
+        'apple-breathe': 'appleBreathe 3s ease-in-out infinite',
+        'apple-float': 'appleFloat 4s ease-in-out infinite',
+      },
+      keyframes: {
+        appleFadeInUp: {
+          '0%': { opacity: '0', transform: 'translateY(14px) scale(0.98)', filter: 'blur(6px)' },
+          '100%': { opacity: '1', transform: 'translateY(0) scale(1)', filter: 'blur(0)' },
+        },
+        appleShimmer: {
+          '0%': { transform: 'translateX(-100%) skewX(-15deg)' },
+          '100%': { transform: 'translateX(250%) skewX(-15deg)' },
+        },
+        appleBreathe: {
+          '0%, 100%': { transform: 'scale(1)', opacity: '0.9', boxShadow: '0 0 0 0 rgba(0, 113, 227, 0.3)' },
+          '50%': { transform: 'scale(1.025)', opacity: '1', boxShadow: '0 0 28px 6px rgba(0, 113, 227, 0.2)' },
+        },
+        appleFloat: {
+          '0%, 100%': { transform: 'translateY(0px)' },
+          '50%': { transform: 'translateY(-4px)' },
+        },
       },
     },
   },

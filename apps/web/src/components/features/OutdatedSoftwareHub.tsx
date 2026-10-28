@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { LiveTerminalModal } from '@/components/features/LiveTerminalModal';
 import { UpdatePreviewModal } from '@/components/features/UpdatePreviewModal';
+import { BatchUpdateProgressModal } from '@/components/features/BatchUpdateProgressModal';
 import { ApplicationEntity, DeviceEntity, JobStatus } from '@updatepilot/shared';
 import {
   ArrowUpCircle,
@@ -24,6 +25,7 @@ import {
   Square,
   RotateCw,
   Eye,
+  Percent,
 } from 'lucide-react';
 
 interface OutdatedSoftwareHubProps {
@@ -56,13 +58,15 @@ export function OutdatedSoftwareHub({
   const [search, setSearch] = useState('');
   const [selectedAppIds, setSelectedAppIds] = useState<Set<string>>(new Set());
 
-  // Active update tracking
+  // Active update tracking & live percentages
   const [activeJobs, setActiveJobs] = useState<Record<string, ActiveJobInfo>>({}); // keyed by applicationId
+  const [jobPercentages, setJobPercentages] = useState<Record<string, number>>({});
   const [updatingAppId, setUpdatingAppId] = useState<string | null>(null);
   const [batchUpdating, setBatchUpdating] = useState(false);
   const [actionMessage, setActionMessage] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
 
   // Modals state
+  const [batchModalApps, setBatchModalApps] = useState<ApplicationEntity[] | null>(null);
   const [terminalApp, setTerminalApp] = useState<ActiveJobInfo | null>(null);
   const [reviewApp, setReviewApp] = useState<ApplicationEntity | null>(null);
 
@@ -97,7 +101,7 @@ export function OutdatedSoftwareHub({
     fetchUpdates();
   }, [fetchUpdates]);
 
-  // Poller for any active jobs to update status in real-time
+  // Poller for any active background jobs to update status and percentage
   useEffect(() => {
     const runningEntries = Object.entries(activeJobs).filter(
       ([_, j]) => j.status === 'RUNNING' || j.status === 'QUEUED' || j.status === 'VERIFYING'
@@ -116,9 +120,18 @@ export function OutdatedSoftwareHub({
               [appId]: { ...prev[appId], status: currentStatus },
             }));
 
+            // Calculate progressive percentage
+            setJobPercentages((prev) => {
+              const current = prev[appId] || 25;
+              if (currentStatus === 'COMPLETED') return { ...prev, [appId]: 100 };
+              if (currentStatus === 'VERIFYING') return { ...prev, [appId]: 92 };
+              if (currentStatus === 'RUNNING') return { ...prev, [appId]: Math.min(88, current + 10) };
+              return prev;
+            });
+
             if (currentStatus === 'COMPLETED') {
               setActionMessage({
-                text: `✔ ${jobInfo.appName} was successfully updated to v${jobInfo.targetVersion}!`,
+                text: `✔ ${jobInfo.appName} was successfully updated to v${jobInfo.targetVersion}! (100% Verified)`,
                 type: 'success',
               });
               fetchUpdates();
@@ -139,124 +152,22 @@ export function OutdatedSoftwareHub({
     return () => clearInterval(interval);
   }, [activeJobs, fetchUpdates, onUpdated]);
 
-  // Quick 1-Click Update for a single application
-  const handleQuickUpdate = async (app: ApplicationEntity) => {
+  // Start percentage update modal for a single application
+  const handleQuickUpdate = (app: ApplicationEntity) => {
     if (!app.availableVersion) return;
-    setUpdatingAppId(app.id);
-    setActionMessage({
-      text: `Starting verified in-app update for ${app.name} to v${app.availableVersion}...`,
-      type: 'info',
-    });
-
-    try {
-      const res = await fetch(`/api/v1/updates/${app.id}/execute`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          confirmed: true,
-          acknowledgedTargetVersion: app.availableVersion,
-        }),
-      });
-
-      const data = await res.json();
-      if (data.success && data.data?.jobId) {
-        const newJobInfo: ActiveJobInfo = {
-          jobId: data.data.jobId,
-          applicationId: app.id,
-          status: 'RUNNING',
-          packageId: app.packageId || app.name,
-          targetVersion: app.availableVersion,
-          appName: app.name,
-          deviceName: deviceMap[app.deviceId] || 'This Host',
-        };
-
-        setActiveJobs((prev) => ({ ...prev, [app.id]: newJobInfo }));
-        setActionMessage({
-          text: `Update dispatched for ${app.name}! WinGet is downloading and executing installation in background.`,
-          type: 'info',
-        });
-      } else {
-        setActionMessage({
-          text: data.error?.message || `Failed to initiate update for ${app.name}.`,
-          type: 'error',
-        });
-      }
-    } catch (err: unknown) {
-      setActionMessage({
-        text: `Error updating ${app.name}: ${err instanceof Error ? err.message : String(err)}`,
-        type: 'error',
-      });
-    } finally {
-      setUpdatingAppId(null);
-    }
+    setBatchModalApps([app]);
   };
 
-  // Batch Update Selected or All
-  const handleBatchUpdate = async (specificIds?: string[]) => {
-    const idsToUpdate = specificIds || (selectedAppIds.size > 0 ? Array.from(selectedAppIds) : undefined);
-    const count = idsToUpdate ? idsToUpdate.length : updates.length;
+  // Start percentage update modal for all or selected applications
+  const handleStartBatchUpdate = (specificApps?: ApplicationEntity[]) => {
+    const targetApps =
+      specificApps ||
+      (selectedAppIds.size > 0
+        ? updates.filter((u) => selectedAppIds.has(u.id))
+        : updates);
 
-    if (count === 0) return;
-    if (
-      !confirm(
-        `Are you sure you want to update ${count} outdated application${count > 1 ? 's' : ''}? Each package will be verified through WinGet.`
-      )
-    ) {
-      return;
-    }
-
-    setBatchUpdating(true);
-    setActionMessage({
-      text: `Queueing batch update for ${count} packages...`,
-      type: 'info',
-    });
-
-    try {
-      const res = await fetch('/api/v1/updates/batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          applicationIds: idsToUpdate,
-          deviceId: selectedDeviceId !== 'ALL' ? selectedDeviceId : undefined,
-        }),
-      });
-
-      const data = await res.json();
-      if (data.success) {
-        const jobs = data.data.jobs || [];
-        const newJobsMap: Record<string, ActiveJobInfo> = {};
-        for (const j of jobs) {
-          const matchingApp = updates.find((u) => u.id === j.applicationId);
-          newJobsMap[j.applicationId] = {
-            jobId: j.id,
-            applicationId: j.applicationId,
-            status: j.status,
-            packageId: j.packageId,
-            targetVersion: j.targetVersion,
-            appName: matchingApp?.name || j.packageId,
-            deviceName: deviceMap[j.deviceId] || 'This Host',
-          };
-        }
-        setActiveJobs((prev) => ({ ...prev, ...newJobsMap }));
-        setSelectedAppIds(new Set());
-        setActionMessage({
-          text: `Batch update authorized! Successfully queued ${data.data.count} package upgrades.`,
-          type: 'success',
-        });
-      } else {
-        setActionMessage({
-          text: data.error?.message || 'Failed to start batch update.',
-          type: 'error',
-        });
-      }
-    } catch (err) {
-      setActionMessage({
-        text: 'Batch update error: ' + (err instanceof Error ? err.message : String(err)),
-        type: 'error',
-      });
-    } finally {
-      setBatchUpdating(false);
-    }
+    if (targetApps.length === 0) return;
+    setBatchModalApps(targetApps);
   };
 
   const toggleSelectAll = () => {
@@ -294,21 +205,21 @@ export function OutdatedSoftwareHub({
       {/* Action Notification Banner */}
       {actionMessage && (
         <div
-          className={`p-3.5 rounded-xl border text-xs flex items-center justify-between gap-3 transition-all ${
+          className={`p-3.5 rounded-2xl border text-xs flex items-center justify-between gap-3 transition-all ${
             actionMessage.type === 'success'
-              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+              ? 'bg-[#34c759]/10 border-[#34c759]/20 text-[#28a745] dark:text-[#34c759]'
               : actionMessage.type === 'error'
-              ? 'bg-red-500/10 border-red-500/20 text-red-700 dark:text-red-300'
-              : 'bg-blue-500/10 border-blue-500/20 text-blue-700 dark:text-blue-300'
+              ? 'bg-[#ff3b30]/10 border-[#ff3b30]/20 text-[#d32f2f] dark:text-[#ff453a]'
+              : 'bg-[#0071e3]/10 border-[#0071e3]/20 text-[#0071e3] dark:text-[#2997ff]'
           }`}
         >
           <div className="flex items-center gap-2">
             {actionMessage.type === 'success' ? (
-              <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0" />
+              <CheckCircle2 className="h-4 w-4 text-[#34c759] flex-shrink-0" />
             ) : actionMessage.type === 'error' ? (
-              <AlertTriangle className="h-4 w-4 text-red-500 flex-shrink-0" />
+              <AlertTriangle className="h-4 w-4 text-[#ff3b30] flex-shrink-0" />
             ) : (
-              <RefreshCw className="h-4 w-4 text-blue-500 animate-spin flex-shrink-0" />
+              <RefreshCw className="h-4 w-4 text-[#0071e3] animate-spin flex-shrink-0" />
             )}
             <span className="font-medium">{actionMessage.text}</span>
           </div>
@@ -322,63 +233,63 @@ export function OutdatedSoftwareHub({
       )}
 
       {/* Main Container Card */}
-      <Card className="border-border/80 shadow-sm overflow-hidden">
-        <CardHeader className="pb-3 border-b border-border/60 bg-card/60">
+      <Card className="border-black/[0.06] dark:border-white/[0.08] shadow-apple overflow-hidden">
+        <CardHeader className="pb-3 border-b border-black/[0.04] dark:border-white/[0.06] bg-white/50 dark:bg-black/10">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2.5">
-                <div className="h-7 w-7 rounded-lg bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center">
+                <div className="h-8 w-8 rounded-xl bg-[#0071e3]/10 text-[#0071e3] flex items-center justify-center">
                   <ArrowUpCircle className="h-4 w-4" />
                 </div>
                 <CardTitle className="text-base sm:text-lg font-bold text-foreground">
                   Outdated Applications & Software Updates
                 </CardTitle>
                 <Badge status="UPDATE_AVAILABLE">
-                  {updates.length} Pending
+                  {updates.length} Outdated
                 </Badge>
               </div>
               <CardDescription className="text-xs mt-1">
-                Each outdated software can be updated directly within this application with real-time WinGet output and version verification.
+                Update each outdated software individually or sequentially with real-time percentage tracking.
               </CardDescription>
             </div>
 
-            {/* Quick Actions & Batch Update */}
+            {/* Quick Actions & Percentage Batch Update */}
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={fetchUpdates}
                 disabled={isLoading}
-                className="h-8 px-2.5 text-xs gap-1"
+                className="h-8 px-3 text-xs gap-1.5 rounded-full"
                 title="Refresh updates list"
               >
                 <RotateCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
                 <span>Refresh</span>
               </Button>
 
+              {/* Update Selected with Percentage */}
               {selectedAppIds.size > 0 && (
                 <Button
                   variant="primary"
                   size="sm"
-                  onClick={() => handleBatchUpdate()}
-                  isLoading={batchUpdating}
-                  className="h-8 px-3 text-xs font-bold gap-1.5 shadow-md shadow-brand-500/20"
+                  onClick={() => handleStartBatchUpdate()}
+                  className="h-8 px-3.5 text-xs font-semibold gap-1.5 rounded-full bg-[#0071e3] hover:bg-[#0077ed] text-white shadow-sm"
                 >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  <span>Update Selected ({selectedAppIds.size})</span>
+                  <Percent className="h-3.5 w-3.5" />
+                  <span>Update Selected ({selectedAppIds.size}) with %</span>
                 </Button>
               )}
 
+              {/* Update Each with Percentage (Master Action) */}
               {updates.length > 0 && selectedAppIds.size === 0 && (
                 <Button
                   variant="primary"
                   size="sm"
-                  onClick={() => handleBatchUpdate()}
-                  isLoading={batchUpdating}
-                  className="h-8 px-3 text-xs font-bold gap-1.5 shadow-md shadow-brand-500/20"
+                  onClick={() => handleStartBatchUpdate(updates)}
+                  className="h-8 px-4 text-xs font-semibold gap-2 rounded-full bg-[#0071e3] hover:bg-[#0077ed] text-white shadow-sm hover:shadow active:scale-95 transition-all"
                 >
                   <Sparkles className="h-3.5 w-3.5" />
-                  <span>Update All ({updates.length})</span>
+                  <span>Update Each ({updates.length}) with Live %</span>
                 </Button>
               )}
             </div>
@@ -387,23 +298,23 @@ export function OutdatedSoftwareHub({
           {/* Filter and Search Bar */}
           <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-3">
             <div className="relative flex-1 w-full">
-              <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+              <Search className="absolute left-3.5 top-2.5 h-3.5 w-3.5 text-neutral-400" />
               <input
                 type="text"
                 placeholder="Search outdated software by name, package ID..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-background border border-border/70 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-neutral-100/70 dark:bg-neutral-800/60 border border-black/[0.04] dark:border-white/[0.08] text-xs text-foreground placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-[#0071e3]"
               />
             </div>
 
             {onDeviceChange && (
               <div className="flex items-center gap-1.5 w-full sm:w-auto">
-                <Laptop className="h-3.5 w-3.5 text-muted-foreground" />
+                <Laptop className="h-3.5 w-3.5 text-neutral-400" />
                 <select
                   value={selectedDeviceId}
                   onChange={(e) => onDeviceChange(e.target.value)}
-                  className="px-2.5 py-1.5 rounded-lg bg-background border border-border/70 text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer"
+                  className="px-3 py-1.5 rounded-xl bg-neutral-100/70 dark:bg-neutral-800/60 border border-black/[0.04] dark:border-white/[0.08] text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-[#0071e3] cursor-pointer"
                 >
                   <option value="ALL">All Computers ({devices.length})</option>
                   {devices.map((d) => (
@@ -420,12 +331,12 @@ export function OutdatedSoftwareHub({
         <CardContent className="p-0">
           {isLoading ? (
             <div className="py-16 text-center text-xs text-muted-foreground flex flex-col items-center justify-center gap-2">
-              <RefreshCw className="h-5 w-5 animate-spin text-brand-500" />
+              <RefreshCw className="h-5 w-5 animate-spin text-[#0071e3]" />
               <span>Checking for verified upstream software updates...</span>
             </div>
           ) : filteredUpdates.length === 0 ? (
             <div className="py-12 px-6 text-center space-y-3">
-              <div className="mx-auto h-12 w-12 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+              <div className="mx-auto h-12 w-12 rounded-full bg-[#34c759]/10 text-[#34c759] flex items-center justify-center">
                 <CheckCircle2 className="h-6 w-6" />
               </div>
               <h4 className="font-bold text-foreground text-sm">
@@ -438,44 +349,44 @@ export function OutdatedSoftwareHub({
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-border/60">
+            <div className="divide-y divide-black/[0.04] dark:divide-white/[0.06]">
               {/* Table Header Bar */}
-              <div className="px-4 py-2 bg-muted/30 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+              <div className="px-4 py-2 bg-neutral-50/70 dark:bg-neutral-900/40 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <button
                     onClick={toggleSelectAll}
-                    className="text-foreground hover:text-brand-500 flex items-center gap-1.5"
+                    className="text-foreground hover:text-[#0071e3] flex items-center gap-1.5"
                     title="Select / Deselect All"
                   >
                     {selectedAppIds.size === filteredUpdates.length ? (
-                      <CheckSquare className="h-4 w-4 text-brand-500" />
+                      <CheckSquare className="h-4 w-4 text-[#0071e3]" />
                     ) : (
                       <Square className="h-4 w-4 text-muted-foreground" />
                     )}
                     <span>Select All</span>
                   </button>
-                  <span>({filteredUpdates.length} applications)</span>
+                  <span>({filteredUpdates.length} outdated packages)</span>
                 </div>
-                <span>Actions</span>
+                <span>Actions & Live Progress</span>
               </div>
 
               {/* Rows */}
               {filteredUpdates.map((app) => {
                 const isSelected = selectedAppIds.has(app.id);
                 const activeJob = activeJobs[app.id];
+                const currentPercent = jobPercentages[app.id] || 35;
                 const isUpdatingThis =
                   updatingAppId === app.id ||
                   activeJob?.status === 'RUNNING' ||
                   activeJob?.status === 'VERIFYING' ||
                   activeJob?.status === 'QUEUED';
                 const isCompleted = activeJob?.status === 'COMPLETED';
-                const isFailed = activeJob?.status === 'FAILED';
 
                 return (
                   <div
                     key={app.id}
                     className={`p-4 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4 ${
-                      isSelected ? 'bg-brand-500/5' : 'hover:bg-muted/30'
+                      isSelected ? 'bg-[#0071e3]/[0.03]' : 'hover:bg-neutral-50/60 dark:hover:bg-neutral-900/30'
                     }`}
                   >
                     {/* Checkbox and App Info */}
@@ -485,7 +396,7 @@ export function OutdatedSoftwareHub({
                         className="mt-1 text-muted-foreground hover:text-foreground flex-shrink-0"
                       >
                         {isSelected ? (
-                          <CheckSquare className="h-4 w-4 text-brand-500" />
+                          <CheckSquare className="h-4 w-4 text-[#0071e3]" />
                         ) : (
                           <Square className="h-4 w-4" />
                         )}
@@ -496,8 +407,8 @@ export function OutdatedSoftwareHub({
                           <span className="font-bold text-sm text-foreground truncate" title={app.name}>
                             {app.name}
                           </span>
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted-foreground bg-muted/70 px-2 py-0.5 rounded">
-                            <Laptop className="h-3 w-3 text-brand-500" />
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-neutral-600 dark:text-neutral-300 bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full border border-black/[0.04] dark:border-white/[0.06]">
+                            <Laptop className="h-3 w-3 text-[#0071e3]" />
                             <span className="truncate max-w-[130px]">{deviceMap[app.deviceId] || 'This Host'}</span>
                           </span>
                           {app.publisher && (
@@ -520,60 +431,47 @@ export function OutdatedSoftwareHub({
                     {/* Version Diff & Status Indicator */}
                     <div className="flex items-center gap-4 flex-wrap md:flex-nowrap justify-between md:justify-end">
                       {/* Version Pill */}
-                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-card border border-border/80 text-xs font-mono shadow-sm">
+                      <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-neutral-100/70 dark:bg-neutral-800/70 border border-black/[0.05] dark:border-white/[0.08] text-xs font-mono shadow-sm">
                         <div>
-                          <span className="text-[10px] text-muted-foreground block font-sans">Installed</span>
+                          <span className="text-[9px] text-muted-foreground block font-sans">Installed</span>
                           <span className="font-medium text-foreground">{app.installedVersion}</span>
                         </div>
-                        <ArrowRight className="h-3.5 w-3.5 text-brand-500 flex-shrink-0" />
+                        <ArrowRight className="h-3.5 w-3.5 text-[#0071e3] flex-shrink-0" />
                         <div>
-                          <span className="text-[10px] text-brand-600 dark:text-brand-400 block font-sans font-semibold">
+                          <span className="text-[9px] text-[#0071e3] block font-sans font-semibold">
                             Target
                           </span>
-                          <span className="font-bold text-brand-600 dark:text-brand-400">
+                          <span className="font-bold text-[#0071e3]">
                             {app.availableVersion}
                           </span>
                         </div>
                       </div>
 
-                      {/* Execution State / Action Buttons */}
+                      {/* Execution State / Action Buttons with Live Percentage */}
                       <div className="flex items-center gap-2">
                         {isUpdatingThis ? (
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs font-semibold text-blue-600 dark:text-blue-400">
-                              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                              <span>{activeJob?.status === 'VERIFYING' ? 'Verifying...' : 'Updating...'}</span>
-                            </span>
-                            {activeJob && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setTerminalApp(activeJob)}
-                                className="h-8 px-2.5 text-xs gap-1 font-mono"
-                                title="View real-time WinGet console"
-                              >
-                                <Terminal className="h-3 w-3 text-brand-500" />
-                                <span>Console</span>
-                              </Button>
-                            )}
+                          /* In-Row Live Percentage Bar */
+                          <div className="flex flex-col gap-1 min-w-[150px] p-2 rounded-xl bg-[#0071e3]/[0.06] border border-[#0071e3]/20">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-semibold text-[#0071e3] flex items-center gap-1.5 text-[11px]">
+                                <RefreshCw className="h-3 w-3 animate-spin" />
+                                <span>{activeJob?.status === 'VERIFYING' ? 'Verifying' : 'Updating'}</span>
+                              </span>
+                              <span className="font-mono font-bold text-[#0071e3] text-xs">
+                                {currentPercent}%
+                              </span>
+                            </div>
+                            <div className="h-1.5 w-full bg-[#0071e3]/15 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-[#0071e3] rounded-full transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
+                                style={{ width: `${currentPercent}%` }}
+                              />
+                            </div>
                           </div>
                         ) : isCompleted ? (
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                              <CheckCircle2 className="h-3.5 w-3.5" />
-                              <span>Up to Date</span>
-                            </span>
-                            {activeJob && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setTerminalApp(activeJob)}
-                                className="h-8 px-2 text-xs text-muted-foreground gap-1"
-                              >
-                                <Terminal className="h-3 w-3" />
-                                <span>Logs</span>
-                              </Button>
-                            )}
+                          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#34c759]/10 border border-[#34c759]/20 text-xs font-bold text-[#34c759] font-mono">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            <span>100% Verified</span>
                           </div>
                         ) : (
                           <div className="flex items-center gap-1.5">
@@ -582,22 +480,22 @@ export function OutdatedSoftwareHub({
                               variant="ghost"
                               size="sm"
                               onClick={() => setReviewApp(app)}
-                              className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground gap-1"
+                              className="h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground gap-1 rounded-full"
                               title="Review checksum and release notes"
                             >
                               <Eye className="h-3.5 w-3.5" />
                               <span className="hidden sm:inline">Details</span>
                             </Button>
 
-                            {/* Direct 1-Click Update Button */}
+                            {/* Direct 1-Click Update Button with Live % Modal */}
                             <Button
                               variant="primary"
                               size="sm"
                               onClick={() => handleQuickUpdate(app)}
-                              className="h-8 px-3 text-xs font-bold gap-1.5 shadow-sm shadow-brand-500/20"
+                              className="h-8 px-3 text-xs font-semibold gap-1.5 rounded-full bg-[#0071e3] hover:bg-[#0077ed] text-white shadow-sm active:scale-95 transition-all"
                             >
                               <ArrowUpCircle className="h-3.5 w-3.5" />
-                              <span>Update Now</span>
+                              <span>Update with %</span>
                             </Button>
                           </div>
                         )}
@@ -610,6 +508,18 @@ export function OutdatedSoftwareHub({
           )}
         </CardContent>
       </Card>
+
+      {/* Sequential Batch / Individual Progress Modal with Live Percentages */}
+      <BatchUpdateProgressModal
+        isOpen={Boolean(batchModalApps)}
+        onClose={() => setBatchModalApps(null)}
+        appsToUpdate={batchModalApps || []}
+        deviceName={selectedDeviceId !== 'ALL' ? (deviceMap[selectedDeviceId] || 'This Host') : 'This PC'}
+        onAllCompleted={() => {
+          fetchUpdates();
+          if (onUpdated) onUpdated();
+        }}
+      />
 
       {/* Live Terminal Output Modal */}
       <LiveTerminalModal

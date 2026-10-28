@@ -144,7 +144,7 @@ export function LiveTerminalModal({
               <span>{packageId || 'Package ID'}</span>
               {deviceName && (
                 <>
-                  <span>•</span>
+                  <span>â€¢</span>
                   <span className="inline-flex items-center gap-1 text-foreground font-sans">
                     <Laptop className="h-3 w-3 text-brand-500" />
                     {deviceName}

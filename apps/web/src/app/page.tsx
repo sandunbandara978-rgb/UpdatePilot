@@ -177,7 +177,7 @@ export default function DashboardOverviewPage() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-black tracking-tight text-foreground">
-                {isLoading ? '—' : metrics?.totalApplications ?? 0}
+                {isLoading ? 'â€”' : metrics?.totalApplications ?? 0}
               </div>
               <p className="text-[11px] text-muted-foreground mt-1">
                 Discovered on {activeDevice ? activeDevice.deviceName : 'all fleet hosts'}
@@ -194,7 +194,7 @@ export default function DashboardOverviewPage() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-black tracking-tight text-blue-600 dark:text-blue-400">
-                {isLoading ? '—' : metrics?.updatesAvailable ?? 0}
+                {isLoading ? 'â€”' : metrics?.updatesAvailable ?? 0}
               </div>
               <p className="text-[11px] text-muted-foreground mt-1">
                 Verified upstream releases pending
@@ -211,7 +211,7 @@ export default function DashboardOverviewPage() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-black tracking-tight text-emerald-600 dark:text-emerald-400">
-                {isLoading ? '—' : metrics?.upToDate ?? 0}
+                {isLoading ? 'â€”' : metrics?.upToDate ?? 0}
               </div>
               <p className="text-[11px] text-muted-foreground mt-1">
                 Matching verified latest versions
@@ -228,7 +228,7 @@ export default function DashboardOverviewPage() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-black tracking-tight text-amber-600 dark:text-amber-400">
-                {isLoading ? '—' : metrics?.activeDevicesCount ?? devices.filter((d) => d.status === 'ONLINE').length}
+                {isLoading ? 'â€”' : metrics?.activeDevicesCount ?? devices.filter((d) => d.status === 'ONLINE').length}
               </div>
               <p className="text-[11px] text-muted-foreground mt-1">
                 Windows machines connected

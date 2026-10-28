@@ -405,7 +405,7 @@ export function BatchUpdateProgressModal({
                       Currently Updating: {currentItem.app.name}
                     </h4>
                     <span className="text-[10px] text-neutral-500 font-mono">
-                      {currentItem.app.installedVersion} → {currentItem.app.availableVersion}
+                      {currentItem.app.installedVersion} â†’ {currentItem.app.availableVersion}
                     </span>
                   </div>
                 </div>
@@ -481,7 +481,7 @@ export function BatchUpdateProgressModal({
                           {it.app.name}
                         </span>
                         <span className="text-[10px] text-neutral-400 font-mono">
-                          v{it.app.installedVersion} → v{it.app.availableVersion}
+                          v{it.app.installedVersion} â†’ v{it.app.availableVersion}
                         </span>
                       </div>
                     </div>
@@ -498,7 +498,7 @@ export function BatchUpdateProgressModal({
                         </span>
                       ) : isCurrent ? (
                         <span className="px-2.5 py-1 rounded-full bg-[#0071e3]/10 text-[#0071e3] text-[11px] font-bold font-mono flex items-center gap-1">
-                          <span className="animate-pulse">●</span> {it.progress}%
+                          <span className="animate-pulse">â—</span> {it.progress}%
                         </span>
                       ) : (
                         <span className="px-2.5 py-1 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-400 text-[11px] font-medium font-mono">

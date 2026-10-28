@@ -4,7 +4,7 @@ import '@/styles/globals.css';
 import { AppShell } from '@/components/layout/AppShell';
 
 export const metadata: Metadata = {
-  title: 'UpdatePilot — Software Update Intelligence & Management Platform',
+  title: 'UpdatePilot â€” Software Update Intelligence & Management Platform',
   description:
     'Industrial-quality software update intelligence platform with Apple macOS-inspired aesthetics. Discover installed applications, inspect verified release metadata, and safely execute user-confirmed updates.',
 };

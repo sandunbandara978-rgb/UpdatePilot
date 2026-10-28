@@ -7,11 +7,14 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const type = searchParams.get('type') || 'applications';
+    const rawDeviceId = searchParams.get('deviceId');
+    const deviceId = rawDeviceId && rawDeviceId !== 'ALL' ? rawDeviceId : undefined;
 
     if (type === 'applications') {
       const { items } = await applicationRepo.list({
+        deviceId,
         page: 1,
-        limit: 5000,
+        limit: 10000,
         sortBy: 'name',
         sortOrder: 'asc',
       });
@@ -31,9 +34,11 @@ export async function GET(req: NextRequest) {
         },
       });
     } else {
-      const { items } = await jobRepo.listUpdateHistory(1, 5000);
+      const { items } = await jobRepo.listUpdateHistory(1, 10000);
+      const filteredItems = deviceId ? items.filter((j) => j.deviceId === deviceId) : items;
+
       const csvHeader = 'Job ID,Device ID,Package ID,Current Version,Target Version,Status,Exit Code,Scheduled At,Completed At\r\n';
-      const csvRows = items.map((j) =>
+      const csvRows = filteredItems.map((j) =>
         `"${j.id}","${j.deviceId}","${j.packageId}","${j.currentVersion}","${j.targetVersion}","${j.status}","${j.exitCode ?? ''}","${j.scheduledAt || ''}","${j.completedAt || ''}"`
       ).join('\r\n');
 

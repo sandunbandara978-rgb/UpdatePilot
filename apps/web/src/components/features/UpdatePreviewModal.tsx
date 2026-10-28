@@ -65,6 +65,8 @@ export function UpdatePreviewModal({ isOpen, onClose, application, onUpdateCompl
         const data = await res.json();
         if (data.success && data.data.job) {
           const currentStatus: JobStatus = data.data.job.status;
+          setJobStatus(currentStatus);
+
           const fullLogs = [data.data.job.executionOutput, data.data.job.verificationDetails]
             .filter(Boolean)
             .join('\n\n--- Verification Details ---\n');
@@ -193,7 +195,7 @@ export function UpdatePreviewModal({ isOpen, onClose, application, onUpdateCompl
                 </div>
                 {preview.warnings.map((w, idx) => (
                   <p key={idx} className="pl-5 text-[11px]">
-                    • {w}
+                    â€¢ {w}
                   </p>
                 ))}
               </div>

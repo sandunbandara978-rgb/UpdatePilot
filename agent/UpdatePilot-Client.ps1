@@ -208,7 +208,7 @@ if ($Pair) {
             } | ConvertTo-Json -Depth 5
 
             $headers = @{ "Authorization" = "Bearer $($resp.data.token)" }
-            $scanRes = Invoke-RestMethod -Uri "$Server/api/v1/devices/$($resp.data.deviceId)/scans" -Method POST -Body $scanPayload -ContentType "application/json" -Headers $headers
+            $scanRes = Invoke-RestMethod -Uri "$Server/api/v1/agent/scans/submit" -Method POST -Body $scanPayload -ContentType "application/json" -Headers $headers
             Write-Host "✔ Software inventory synchronized: $($apps.Count) applications discovered!" -ForegroundColor Green
         } else {
             Write-Host "[ERROR] Pairing failed: $($resp.error.message)" -ForegroundColor Red
@@ -236,7 +236,7 @@ if ($Scan) {
     } | ConvertTo-Json -Depth 5
 
     try {
-        $scanRes = Invoke-RestMethod -Uri "$($creds.Server)/api/v1/devices/$($creds.DeviceId)/scans" -Method POST -Body $scanPayload -ContentType "application/json" -Headers $headers
+        $scanRes = Invoke-RestMethod -Uri "$($creds.Server)/api/v1/agent/scans/submit" -Method POST -Body $scanPayload -ContentType "application/json" -Headers $headers
         Write-Host "✔ Scan submitted: $($apps.Count) applications recorded on server!" -ForegroundColor Green
     } catch {
         Write-Host "[ERROR] Scan submission failed: $($_.Exception.Message)" -ForegroundColor Red
@@ -262,12 +262,12 @@ if ($Service) {
             }
 
             # Poll for jobs
-            $poll = Invoke-RestMethod -Uri "$($creds.Server)/api/v1/agent/poll" -Method GET -Headers $headers
+            $poll = Invoke-RestMethod -Uri "$($creds.Server)/api/v1/agent/jobs/poll" -Method GET -Headers $headers
             if ($poll.success -and $poll.data -and $poll.data.job) {
                 $job = $poll.data.job
                 Write-Host "[UpdatePilot] Received $($job.type) job: $($job.id)" -ForegroundColor Cyan
 
-                # Claim job
+                # Claim job atomically
                 Invoke-RestMethod -Uri "$($creds.Server)/api/v1/agent/jobs/$($job.id)/claim" -Method POST -Headers $headers | Out-Null
 
                 if ($job.type -eq "SCAN") {
@@ -276,7 +276,7 @@ if ($Service) {
                         scanJobId = $job.id
                         applications = $apps
                     } | ConvertTo-Json -Depth 5
-                    Invoke-RestMethod -Uri "$($creds.Server)/api/v1/devices/$($creds.DeviceId)/scans" -Method POST -Body $scanPayload -ContentType "application/json" -Headers $headers | Out-Null
+                    Invoke-RestMethod -Uri "$($creds.Server)/api/v1/agent/scans/submit" -Method POST -Body $scanPayload -ContentType "application/json" -Headers $headers | Out-Null
 
                     $repBody = @{ status = "COMPLETED"; logs = "Discovered $($apps.Count) applications" } | ConvertTo-Json
                     Invoke-RestMethod -Uri "$($creds.Server)/api/v1/agent/jobs/$($job.id)/report" -Method POST -Body $repBody -ContentType "application/json" -Headers $headers | Out-Null
@@ -286,13 +286,67 @@ if ($Service) {
                     $targetVer = $job.payload.targetVersion
                     Write-Host "[UpdatePilot] Executing verified upgrade for $pkgId -> $targetVer..." -ForegroundColor Yellow
 
-                    $upgradeProcess = Start-Process -FilePath "winget" -ArgumentList "upgrade", "--id", $pkgId, "--exact", "--accept-source-agreements", "--accept-package-agreements" -NoNewWindow -Wait -PassThru
-                    $exitCode = $upgradeProcess.ExitCode
+                    # Status: RUNNING
+                    $runBody = @{ status = "RUNNING"; logs = "Executing WinGet upgrade for $pkgId bound to version $targetVer..." } | ConvertTo-Json
+                    Invoke-RestMethod -Uri "$($creds.Server)/api/v1/agent/jobs/$($job.id)/report" -Method POST -Body $runBody -ContentType "application/json" -Headers $headers | Out-Null
 
-                    if ($exitCode -eq 0) {
-                        $repBody = @{ status = "COMPLETED"; exitCode = 0; verifiedVersion = $targetVer; logs = "Upgrade successful." } | ConvertTo-Json
-                        Invoke-RestMethod -Uri "$($creds.Server)/api/v1/agent/jobs/$($job.id)/report" -Method POST -Body $repBody -ContentType "application/json" -Headers $headers | Out-Null
-                        Write-Host "✔ Upgrade job succeeded for $pkgId!" -ForegroundColor Green
+                    # Execute WinGet bound strictly to target version with interactive prompts disabled
+                    $argList = @("upgrade", "--id", $pkgId, "--version", $targetVer, "--exact", "--accept-source-agreements", "--accept-package-agreements", "--disable-interactivity")
+                    $upgradeProcess = Start-Process -FilePath "winget" -ArgumentList $argList -NoNewWindow -Wait -PassThru
+                    $exitCode = $upgradeProcess.ExitCode
+                    $restartRequired = ($exitCode -eq 3010)
+
+                    if ($exitCode -eq 0 -or $restartRequired) {
+                        # Status: VERIFYING - Independently rescan package version to verify
+                        Write-Host "[UpdatePilot] WinGet installer finished (exit code $exitCode). Inspecting installed version..." -ForegroundColor Cyan
+                        $verifyingBody = @{ status = "VERIFYING"; logs = "Inspecting installed software inventory to verify version change..." } | ConvertTo-Json
+                        Invoke-RestMethod -Uri "$($creds.Server)/api/v1/agent/jobs/$($job.id)/report" -Method POST -Body $verifyingBody -ContentType "application/json" -Headers $headers | Out-Null
+
+                        $rawList = & winget list --id $pkgId --exact --accept-source-agreements 2>$null
+                        $actualInstalledVer = $null
+
+                        if ($rawList) {
+                            $listLines = $rawList -split "`r?`n"
+                            foreach ($l in $listLines) {
+                                if ($l -like "*$pkgId*") {
+                                    $tokens = $l.Trim() -split "\s{2,}"
+                                    if ($tokens.Count -ge 3 -and -not [string]::IsNullOrWhiteSpace($tokens[2])) {
+                                        $actualInstalledVer = $tokens[2].Trim()
+                                        break
+                                    }
+                                }
+                            }
+                        }
+
+                        # Compare versions strictly (clean leading 'v' prefixes)
+                        $cleanInstalled = if ($actualInstalledVer) { $actualInstalledVer.Trim().TrimStart('v','V') } else { "" }
+                        $cleanExpected = if ($targetVer) { $targetVer.Trim().TrimStart('v','V') } else { "" }
+
+                        if ($actualInstalledVer -and ($cleanInstalled -eq $cleanExpected)) {
+                            $targetStatus = if ($restartRequired) { "RESTART_REQUIRED" } else { "COMPLETED" }
+                            $repBody = @{
+                                status = $targetStatus
+                                exitCode = $exitCode
+                                verifiedVersion = $actualInstalledVer
+                                logs = "Upgrade successful and independently verified installed version: $actualInstalledVer"
+                            } | ConvertTo-Json
+                            Invoke-RestMethod -Uri "$($creds.Server)/api/v1/agent/jobs/$($job.id)/report" -Method POST -Body $repBody -ContentType "application/json" -Headers $headers | Out-Null
+                            Write-Host "✔ Upgrade job succeeded and verified for $pkgId ($actualInstalledVer)!" -ForegroundColor Green
+                        } else {
+                            $errMsg = if (-not $actualInstalledVer) {
+                                "Verification failed: Package '$pkgId' was not found in installed inventory after upgrade."
+                            } else {
+                                "Verification failed: Detected installed version '$actualInstalledVer' does not match target version '$targetVer'."
+                            }
+                            Write-Host "✖ $errMsg" -ForegroundColor Red
+                            $repBody = @{
+                                status = "FAILED"
+                                exitCode = $exitCode
+                                errorDetails = $errMsg
+                                logs = "WinGet exited with code $exitCode, but post-install inspection failed to verify target version."
+                            } | ConvertTo-Json
+                            Invoke-RestMethod -Uri "$($creds.Server)/api/v1/agent/jobs/$($job.id)/report" -Method POST -Body $repBody -ContentType "application/json" -Headers $headers | Out-Null
+                        }
                     } else {
                         $repBody = @{ status = "FAILED"; exitCode = $exitCode; errorDetails = "WinGet exited with code $exitCode" } | ConvertTo-Json
                         Invoke-RestMethod -Uri "$($creds.Server)/api/v1/agent/jobs/$($job.id)/report" -Method POST -Body $repBody -ContentType "application/json" -Headers $headers | Out-Null

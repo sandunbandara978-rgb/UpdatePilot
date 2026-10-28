@@ -1,6 +1,6 @@
 import {
-  ApplicationEntity,
   DeviceEntity,
+  ApplicationEntity,
   ScanJobEntity,
   UpdateJobEntity,
   AuditEventEntity,
@@ -62,7 +62,7 @@ export interface IJobRepository {
     targetVersion: string;
   }): Promise<UpdateJobEntity>;
   pollPendingJob(deviceId: string): Promise<{ id: string; type: 'SCAN' | 'UPDATE'; payload: any } | null>;
-  claimJob(id: string, type: 'SCAN' | 'UPDATE'): Promise<boolean>;
+  claimJob(id: string, type: 'SCAN' | 'UPDATE', deviceId?: string): Promise<boolean>;
   updateScanJob(id: string, data: Partial<ScanJobEntity>): Promise<void>;
   updateUpdateJob(id: string, data: Partial<UpdateJobEntity>): Promise<void>;
   listRecentJobs(limit: number): Promise<Array<{ id: string; type: 'SCAN' | 'UPDATE'; title: string; status: JobStatus; timestamp: string; details?: string }>>;

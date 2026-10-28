@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@updatepilot/shared": "*",
     "commander": "^12.1.0"
   },
   "devDependencies": {

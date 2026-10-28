@@ -131,14 +131,14 @@ export function OutdatedSoftwareHub({
 
             if (currentStatus === 'COMPLETED') {
               setActionMessage({
-                text: `✔ ${jobInfo.appName} was successfully updated to v${jobInfo.targetVersion}! (100% Verified)`,
+                text: `âœ” ${jobInfo.appName} was successfully updated to v${jobInfo.targetVersion}! (100% Verified)`,
                 type: 'success',
               });
               fetchUpdates();
               if (onUpdated) onUpdated();
             } else if (currentStatus === 'FAILED') {
               setActionMessage({
-                text: `✖ Update failed for ${jobInfo.appName}. Click "View Console" for details.`,
+                text: `âœ– Update failed for ${jobInfo.appName}. Click "View Console" for details.`,
                 type: 'error',
               });
             }
@@ -227,7 +227,7 @@ export function OutdatedSoftwareHub({
             onClick={() => setActionMessage(null)}
             className="text-xs hover:opacity-75 font-semibold px-2 py-0.5"
           >
-            ✕
+            âœ•
           </button>
         </div>
       )}
@@ -422,7 +422,7 @@ export function OutdatedSoftwareHub({
                           <span className="truncate max-w-[200px]" title={app.packageId || ''}>
                             {app.packageId}
                           </span>
-                          <span>•</span>
+                          <span>â€¢</span>
                           <span>Source: {app.source || 'winget'}</span>
                         </div>
                       </div>

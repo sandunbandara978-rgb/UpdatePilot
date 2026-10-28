@@ -8,7 +8,10 @@ export async function GET() {
     const findings = await securityRepo.listAll();
     return jsonSuccess({
       findings,
-      disclaimer: 'Security findings are matched against verified package identifiers and trusted advisory databases. Unmatched applications are excluded.',
+      lastCheckedAt: new Date().toISOString(),
+      source: 'OSV / National Vulnerability Database (NVD)',
+      disclaimer:
+        'Vulnerability intelligence is matched strictly against verified package identifiers and official public advisories. Unmatched software and local executables without upstream package mappings are excluded.',
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

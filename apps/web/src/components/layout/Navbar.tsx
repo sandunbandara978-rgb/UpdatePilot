@@ -80,11 +80,11 @@ export function Navbar({ onScanClick, onConnectAgentClick, isScanning = false }:
               title="Select computer to inspect"
             >
               <option value="ALL">
-                🖥️ All Computers ({devices.length} {devices.length === 1 ? 'Host' : 'Hosts'})
+                ðŸ–¥ï¸ All Computers ({devices.length} {devices.length === 1 ? 'Host' : 'Hosts'})
               </option>
               {devices.map((d) => (
                 <option key={d.id} value={d.id}>
-                  {d.status === 'ONLINE' ? '🟢' : '⚪'} {d.deviceName}
+                  {d.status === 'ONLINE' ? 'ðŸŸ¢' : 'âšª'} {d.deviceName}
                 </option>
               ))}
             </select>

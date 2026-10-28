@@ -1,7 +1,14 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { applicationRepo, jobRepo, releaseMetadataRepo, auditRepo } from '../repositories';
-import { SAFE_PACKAGE_ID_REGEX, ApplicationEntity, ReleaseMetadataEntity, UpdateJobEntity } from '@updatepilot/shared';
+import * as os from 'os';
+import { applicationRepo, jobRepo, releaseMetadataRepo, auditRepo, deviceRepo } from '../repositories';
+import {
+  SAFE_PACKAGE_ID_REGEX,
+  ApplicationEntity,
+  ReleaseMetadataEntity,
+  UpdateJobEntity,
+  compareVersions,
+} from '@updatepilot/shared';
 
 const execFileAsync = promisify(execFile);
 
@@ -95,7 +102,7 @@ export class UpdateService {
       metadata: { jobId: job.id, targetVersion: preview.targetVersion },
     });
 
-    // Asynchronously trigger local execution if running on Windows
+    // Asynchronously trigger local execution if running on Windows and device matches local host
     this.triggerAsyncLocalExecution(
       job.id,
       preview.application.id,
@@ -149,6 +156,13 @@ export class UpdateService {
   /**
    * Directly executes WinGet upgrade in background on the host system
    * and verifies installed version change.
+   *
+   * Safety Rules:
+   * 1. Only executes if target device matches this local host machine.
+   * 2. Binds strictly to approved targetVersion via `--version <targetVersion>`.
+   * 3. Independently rescans post-install version.
+   * 4. NEVER marks UP_TO_DATE or COMPLETED without version proof matching targetVersion.
+   * 5. Atomically claims job before starting execution.
    */
   private triggerAsyncLocalExecution(
     jobId: string,
@@ -159,21 +173,37 @@ export class UpdateService {
   ): void {
     if (process.platform !== 'win32') return;
 
-    // Small delay to allow remote agent polling to claim if preferred,
-    // or run immediately on this host
+    // Small delay to allow remote agent polling to claim if preferred
     setTimeout(async () => {
       try {
         const currentJob = await jobRepo.findUpdateJobById(jobId);
         // If already claimed or running by background agent, don't double execute
-        if (!currentJob || currentJob.status === 'COMPLETED' || currentJob.status === 'RUNNING') {
+        if (!currentJob || currentJob.status !== 'QUEUED') {
           return;
         }
 
-        // Claim and mark RUNNING
+        // Verify that this host is actually the target device
+        const device = await deviceRepo.findById(deviceId);
+        if (device) {
+          const localHostName = os.hostname().toLowerCase();
+          const targetHostName = device.deviceName.toLowerCase();
+          if (targetHostName !== localHostName) {
+            // Target is a different device; leave job for that device's agent to claim
+            return;
+          }
+        }
+
+        // Atomically claim the job
+        const claimed = await jobRepo.claimJob(jobId, 'UPDATE');
+        if (!claimed) {
+          return;
+        }
+
+        // Mark RUNNING
         await jobRepo.updateUpdateJob(jobId, {
           status: 'RUNNING',
           startedAt: new Date().toISOString(),
-          executionOutput: `Starting verified upgrade for ${packageId} to version ${targetVersion} via WinGet...\nExecuting: winget upgrade --id "${packageId}" --exact --accept-package-agreements --accept-source-agreements --disable-interactivity`,
+          executionOutput: `Starting verified upgrade for ${packageId} bound to version ${targetVersion} via WinGet...\nExecuting: winget upgrade --id "${packageId}" --version "${targetVersion}" --exact --accept-package-agreements --accept-source-agreements --disable-interactivity`,
         });
 
         let stdout = '';
@@ -188,6 +218,8 @@ export class UpdateService {
               'upgrade',
               '--id',
               packageId,
+              '--version',
+              targetVersion,
               '--exact',
               '--accept-package-agreements',
               '--accept-source-agreements',
@@ -215,47 +247,75 @@ export class UpdateService {
             verificationDetails: 'Inspecting installed inventory to verify version change...',
           });
 
-          let verifiedVersion = targetVersion;
+          let actualInstalledVersion: string | null = null;
           try {
             const listRes = await execFileAsync(
               'winget',
               ['list', '--id', packageId, '--exact', '--accept-source-agreements'],
               { maxBuffer: 5 * 1024 * 1024 }
             );
-            const lines = listRes.stdout.split(/\r?\n/);
+            const cleanOut = listRes.stdout.replace(/\r(?!\n)/g, '\n');
+            const lines = cleanOut.split(/\r?\n/);
             for (const line of lines) {
               if (line.includes(packageId)) {
                 const parts = line.trim().split(/\s{2,}/);
                 if (parts[2]) {
-                  verifiedVersion = parts[2];
+                  actualInstalledVersion = parts[2].trim();
+                  break;
                 }
               }
             }
-          } catch {
-            // fallback to targetVersion
+          } catch (inspectErr) {
+            console.warn('Failed to rescan package after upgrade:', inspectErr);
           }
 
-          // Update application status in repository
-          await applicationRepo.updateStatus(applicationId, 'UP_TO_DATE', verifiedVersion, null);
+          // Compare actual installed version with targetVersion using strict comparator
+          const comparison = actualInstalledVersion ? compareVersions(actualInstalledVersion, targetVersion) : null;
 
-          // Mark job COMPLETED
-          await jobRepo.updateUpdateJob(jobId, {
-            status: restartRequired ? 'RESTART_REQUIRED' : 'COMPLETED',
-            completedAt: new Date().toISOString(),
-            exitCode,
-            executionOutput: stdout,
-            verificationDetails: `Successfully upgraded and verified version: ${verifiedVersion}`,
-          });
+          if (comparison === 0 && actualInstalledVersion) {
+            // Update application status in repository
+            await applicationRepo.updateStatus(applicationId, 'UP_TO_DATE', actualInstalledVersion, null);
 
-          await auditRepo.record({
-            deviceId,
-            eventType: 'UPDATE_COMPLETED',
-            action: `Software update completed and verified for ${packageId}`,
-            target: packageId,
-            metadata: { version: verifiedVersion, exitCode },
-          });
+            // Mark job COMPLETED
+            await jobRepo.updateUpdateJob(jobId, {
+              status: restartRequired ? 'RESTART_REQUIRED' : 'COMPLETED',
+              completedAt: new Date().toISOString(),
+              exitCode,
+              executionOutput: stdout,
+              verificationDetails: `Successfully upgraded and verified version: ${actualInstalledVersion}`,
+            });
+
+            await auditRepo.record({
+              deviceId,
+              eventType: 'UPDATE_COMPLETED',
+              action: `Software update completed and verified for ${packageId}`,
+              target: packageId,
+              metadata: { version: actualInstalledVersion, exitCode },
+            });
+          } else {
+            // VERIFICATION FAILED: Do NOT substitute targetVersion! Do NOT mark UP_TO_DATE!
+            const failureDetail = !actualInstalledVersion
+              ? `Verification failed: Package "${packageId}" was not found in installed inventory after upgrade.`
+              : `Verification failed: Detected installed version (${actualInstalledVersion}) does not match expected target version (${targetVersion}).`;
+
+            await jobRepo.updateUpdateJob(jobId, {
+              status: 'FAILED',
+              completedAt: new Date().toISOString(),
+              exitCode,
+              executionOutput: stdout + (stderr ? `\n[STDERR]:\n${stderr}` : ''),
+              verificationDetails: failureDetail,
+            });
+
+            await auditRepo.record({
+              deviceId,
+              eventType: 'UPDATE_FAILED',
+              action: `Software update verification failed for ${packageId}`,
+              target: packageId,
+              metadata: { exitCode, detectedVersion: actualInstalledVersion, expectedVersion: targetVersion },
+            });
+          }
         } else {
-          // Failed
+          // Execution failed
           await jobRepo.updateUpdateJob(jobId, {
             status: 'FAILED',
             completedAt: new Date().toISOString(),
@@ -280,7 +340,7 @@ export class UpdateService {
           verificationDetails: fatalErr instanceof Error ? fatalErr.message : String(fatalErr),
         });
       }
-    }, 1000);
+    }, 1500);
   }
 }
 

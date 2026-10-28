@@ -530,10 +530,13 @@ export class MemoryJobRepository implements IJobRepository {
     return null;
   }
 
-  async claimJob(id: string, type: 'SCAN' | 'UPDATE'): Promise<boolean> {
+  async claimJob(id: string, type: 'SCAN' | 'UPDATE', deviceId?: string): Promise<boolean> {
     if (type === 'UPDATE') {
       const job = memoryStore.updateJobs.get(id);
       if (job && job.status === 'QUEUED') {
+        if (deviceId && job.deviceId !== deviceId) {
+          return false;
+        }
         job.status = 'CLAIMED';
         job.startedAt = new Date().toISOString();
         memoryStore.saveToDisk();
@@ -542,6 +545,9 @@ export class MemoryJobRepository implements IJobRepository {
     } else {
       const job = memoryStore.scanJobs.get(id);
       if (job && job.status === 'QUEUED') {
+        if (deviceId && job.deviceId !== deviceId) {
+          return false;
+        }
         job.status = 'CLAIMED';
         job.startedAt = new Date().toISOString();
         memoryStore.saveToDisk();
@@ -574,7 +580,7 @@ export class MemoryJobRepository implements IJobRepository {
       list.push({
         id: u.id,
         type: 'UPDATE',
-        title: `Update ${u.packageId} (${u.currentVersion} → ${u.targetVersion})`,
+        title: `Update ${u.packageId} (${u.currentVersion} â†’ ${u.targetVersion})`,
         status: u.status,
         timestamp: u.createdAt,
         details: u.verificationDetails || u.executionOutput || undefined,

@@ -496,17 +496,22 @@ export class PrismaJobRepository implements IJobRepository {
     return null;
   }
 
-  async claimJob(id: string, type: 'SCAN' | 'UPDATE'): Promise<boolean> {
+  async claimJob(id: string, type: 'SCAN' | 'UPDATE', deviceId?: string): Promise<boolean> {
     const db = getPrisma();
+    const whereClause: any = { id, status: 'QUEUED' };
+    if (deviceId) {
+      whereClause.deviceId = deviceId;
+    }
+
     if (type === 'SCAN') {
       const res = await db.scanJob.updateMany({
-        where: { id, status: 'QUEUED' },
+        where: whereClause,
         data: { status: 'CLAIMED', startedAt: new Date() },
       });
       return res.count > 0;
     } else {
       const res = await db.updateJob.updateMany({
-        where: { id, status: 'QUEUED' },
+        where: whereClause,
         data: { status: 'CLAIMED', startedAt: new Date() },
       });
       return res.count > 0;

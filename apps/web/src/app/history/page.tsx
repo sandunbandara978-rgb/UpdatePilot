@@ -114,7 +114,7 @@ export default function HistoryPage() {
                               {job.exitCode}
                             </span>
                           ) : (
-                            <span className="text-muted-foreground">—</span>
+                            <span className="text-muted-foreground">â€”</span>
                           )}
                         </td>
                         <td className="py-3.5 px-4 text-right">

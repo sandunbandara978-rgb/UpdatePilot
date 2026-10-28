@@ -9,12 +9,12 @@ export class JobService {
   }
 
   async claimJobByAgent(token: string, jobId: string) {
-    await deviceService.verifyAgentToken(token);
-    // Try update job first
-    const claimedUpdate = await jobRepo.claimJob(jobId, 'UPDATE');
+    const deviceId = await deviceService.verifyAgentToken(token);
+    // Try update job first with device ownership validation
+    const claimedUpdate = await jobRepo.claimJob(jobId, 'UPDATE', deviceId);
     if (claimedUpdate) return { claimed: true };
 
-    const claimedScan = await jobRepo.claimJob(jobId, 'SCAN');
+    const claimedScan = await jobRepo.claimJob(jobId, 'SCAN', deviceId);
     return { claimed: claimedScan };
   }
 
@@ -34,6 +34,10 @@ export class JobService {
     // Check if it's an update job
     const updateJob = await jobRepo.findUpdateJobById(jobId);
     if (updateJob) {
+      if (updateJob.deviceId !== deviceId) {
+        throw new Error(`Forbidden: Device ${deviceId} does not own update job ${jobId}`);
+      }
+
       const updateData: Partial<UpdateJobEntity> = {
         status: report.status as JobStatus,
         exitCode: report.exitCode,
@@ -44,12 +48,15 @@ export class JobService {
       };
 
       if (report.status === 'COMPLETED') {
+        if (!report.verifiedVersion) {
+          throw new Error('Verification required: Completed status requires a verifiedVersion.');
+        }
         updateData.completedAt = new Date().toISOString();
         // Update the application status to UP_TO_DATE and update installed version
         await applicationRepo.updateStatus(
           updateJob.applicationId,
           'UP_TO_DATE',
-          report.verifiedVersion || updateJob.targetVersion,
+          report.verifiedVersion,
           null
         );
 
@@ -58,7 +65,7 @@ export class JobService {
           eventType: 'UPDATE_COMPLETED',
           action: `Software update completed and verified for ${updateJob.packageId}`,
           target: updateJob.packageId,
-          metadata: { version: report.verifiedVersion || updateJob.targetVersion },
+          metadata: { version: report.verifiedVersion },
         });
       } else if (report.status === 'FAILED') {
         updateData.completedAt = new Date().toISOString();
@@ -78,6 +85,10 @@ export class JobService {
     // Check if it's a scan job
     const scanJob = await jobRepo.findScanJobById(jobId);
     if (scanJob) {
+      if (scanJob.deviceId !== deviceId) {
+        throw new Error(`Forbidden: Device ${deviceId} does not own scan job ${jobId}`);
+      }
+
       await jobRepo.updateScanJob(jobId, {
         status: report.status as JobStatus,
         errorDetails: report.errorDetails,
@@ -101,7 +112,7 @@ export class JobService {
     return null;
   }
 
-  async getDashboardMetrics(deviceId?: string): Promise<DashboardMetrics> {
+  async getDashboardMetrics(deviceId?: string, userId?: string): Promise<DashboardMetrics> {
     const allAppsRes = await applicationRepo.list({
       deviceId: deviceId && deviceId !== 'ALL' ? deviceId : undefined,
       page: 1,
@@ -123,7 +134,8 @@ export class JobService {
       else unknown++;
     }
 
-    const devices = await deviceRepo.listByUserId('usr_default_admin');
+    const targetUserId = userId || 'usr_default_admin';
+    const devices = await deviceRepo.listByUserId(targetUserId);
     const activeDevices = devices.filter((d) => d.status === 'ONLINE');
 
     const recentActivity = await jobRepo.listRecentJobs(10);

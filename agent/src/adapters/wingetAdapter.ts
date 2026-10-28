@@ -265,12 +265,14 @@ export class WinGetAdapter {
   /**
    * Execute safe allowlisted package upgrade
    * Strictly adheres to Section 10 & 15:
-   * - No shell string evaluation
+   * - No shell string evaluation (uses execFileAsync with argument array)
    * - Validated package ID
+   * - Binds strictly to approved target version when provided
    * - Accepts standard agreements
-   * - No disabling of cryptographic hash/signature verification
+   * - Preserves cryptographic hash/signature verification
+   * - Disables interactivity to avoid unattended hanging
    */
-  async upgradePackage(packageId: string): Promise<UpgradeResult> {
+  async upgradePackage(packageId: string, targetVersion?: string): Promise<UpgradeResult> {
     if (!SAFE_PACKAGE_ID_REGEX.test(packageId)) {
       return {
         success: false,
@@ -289,7 +291,23 @@ export class WinGetAdapter {
       '--exact',
       '--accept-package-agreements',
       '--accept-source-agreements',
+      '--disable-interactivity',
     ];
+
+    if (targetVersion) {
+      const sanitizedVer = targetVersion.trim();
+      if (!/^[a-zA-Z0-9._+-]+$/.test(sanitizedVer)) {
+        return {
+          success: false,
+          exitCode: 1,
+          stdout: '',
+          stderr: `Target version validation failed: "${sanitizedVer}" contains invalid characters.`,
+          restartRequired: false,
+          error: 'INVALID_TARGET_VERSION',
+        };
+      }
+      args.push('--version', sanitizedVer);
+    }
 
     try {
       const { stdout, stderr } = await execFileAsync(this.wingetExecutable, args, {

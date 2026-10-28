@@ -16,7 +16,7 @@ const AGENT_VERSION = '1.0.0';
 
 program
   .name('updatepilot-agent')
-  .description('UpdatePilot Windows Desktop Agent — Software Discovery & Safe Updates')
+  .description('UpdatePilot Windows Desktop Agent â€” Software Discovery & Safe Updates')
   .version(AGENT_VERSION);
 
 /**
@@ -42,12 +42,12 @@ program
         pairedAt: new Date().toISOString(),
       });
 
-      console.log(`\x1b[32m✔ Host successfully paired!\x1b[0m`);
+      console.log(`\x1b[32mâœ” Host successfully paired!\x1b[0m`);
       console.log(`Device ID: ${result.deviceId}`);
       console.log(`Polling interval: ${result.pollingIntervalSec}s`);
       console.log(`Credentials securely encrypted and saved to Windows protected storage.`);
     } catch (err: unknown) {
-      console.error(`\x1b[31m✖ Pairing failed:\x1b[0m`, err instanceof Error ? err.message : String(err));
+      console.error(`\x1b[31mâœ– Pairing failed:\x1b[0m`, err instanceof Error ? err.message : String(err));
       process.exit(1);
     }
   });
@@ -108,7 +108,7 @@ program
         }
         const client = new AgentApiClient(creds.serverUrl, creds.token);
         const res = await client.submitScan('manual_scan_' + Date.now(), apps);
-        console.log(`\x1b[32m✔ Scan submitted successfully to ${creds.serverUrl}! (${res.appsSaved} applications recorded)\x1b[0m`);
+        console.log(`\x1b[32mâœ” Scan submitted successfully to ${creds.serverUrl}! (${res.appsSaved} applications recorded)\x1b[0m`);
       } else {
         console.table(
           apps.slice(0, 15).map((a) => ({
@@ -214,8 +214,8 @@ program
               logs: `Starting WinGet upgrade for ${packageId} to version ${targetVersion}...`,
             });
 
-            // Execute upgrade
-            const upgradeRes = await winget.upgradePackage(packageId);
+            // Execute upgrade bound strictly to approved targetVersion
+            const upgradeRes = await winget.upgradePackage(packageId, targetVersion);
 
             if (!upgradeRes.success && !upgradeRes.restartRequired) {
               console.error(`[UpdatePilot Agent] Upgrade failed with exit code ${upgradeRes.exitCode}`);
@@ -242,7 +242,7 @@ program
 
               const verification = await verifier.verifyUpgrade(packageId, targetVersion);
               if (verification.verified) {
-                console.log(`\x1b[32m✔ Verified! Installed version is ${verification.actualInstalledVersion}\x1b[0m`);
+                console.log(`\x1b[32mâœ” Verified! Installed version is ${verification.actualInstalledVersion}\x1b[0m`);
                 await client.reportJob(job.id, {
                   status: 'COMPLETED',
                   exitCode: upgradeRes.exitCode,
@@ -250,7 +250,7 @@ program
                   logs: upgradeRes.stdout + '\n' + verification.details,
                 });
               } else {
-                console.warn(`\x1b[33m⚠ Verification failed: ${verification.details}\x1b[0m`);
+                console.warn(`\x1b[33mâš  Verification failed: ${verification.details}\x1b[0m`);
                 await client.reportJob(job.id, {
                   status: 'FAILED',
                   exitCode: upgradeRes.exitCode,

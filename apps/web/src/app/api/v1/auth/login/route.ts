@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { jsonSuccess, jsonError } from '@/server/apiResponse';
-import { SecurityAuth } from '@/server/security/auth';
+import { SecurityAuth, SessionUser } from '@/server/security/auth';
+import { rateLimiter } from '@/server/security/rateLimiter';
 import { prisma } from '@/server/db';
 import { z } from 'zod';
 
@@ -9,17 +10,25 @@ const LoginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
-const DEFAULT_DEMO_USER = {
+const DEFAULT_DEMO_USER: SessionUser = {
   id: 'usr_default_admin',
   email: 'admin@updatepilot.local',
   name: 'Local Administrator',
   role: 'ADMIN',
-  // PBKDF2 hash of "Password123!"
-  passwordHash: '8e4f1a2b:Password123!', 
 };
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = req.headers.get('x-forwarded-for') || req.ip || '127.0.0.1';
+    const rateCheck = rateLimiter.check(`login:${ip}`, 5, 5 * 60 * 1000);
+    if (!rateCheck.allowed) {
+      return jsonError(
+        `Too many login attempts. Please wait ${Math.ceil(rateCheck.resetInMs / 1000)} seconds before retrying.`,
+        'RATE_LIMITED',
+        429
+      );
+    }
+
     const body = await req.json();
     const { email, password } = LoginSchema.parse(body);
 
@@ -58,23 +67,24 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const authenticatedUser = user
-      ? { id: user.id, email: user.email, name: user.name, role: user.role }
+    rateLimiter.reset(`login:${ip}`);
+
+    const authenticatedUser: SessionUser = user
+      ? { id: user.id, email: user.email, name: user.name, role: user.role as 'ADMIN' | 'OPERATOR' | 'VIEWER' }
       : { id: DEFAULT_DEMO_USER.id, email: DEFAULT_DEMO_USER.email, name: DEFAULT_DEMO_USER.name, role: DEFAULT_DEMO_USER.role };
 
-    const sessionToken = `session_${Buffer.from(JSON.stringify(authenticatedUser)).toString('base64')}`;
+    const sessionToken = SecurityAuth.signSessionToken(authenticatedUser);
 
     const res = jsonSuccess({
       user: authenticatedUser,
       token: sessionToken,
     });
 
-    // Set HTTP-only cookie
     res.cookies.set('updatepilot_session', sessionToken, {
       path: '/',
-      httpOnly: false, // accessible to client for smooth state verification
+      httpOnly: false,
       sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 7, // 7 days
+      maxAge: 60 * 60 * 24 * 7,
     });
 
     return res;

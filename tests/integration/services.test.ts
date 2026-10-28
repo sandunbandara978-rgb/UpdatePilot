@@ -226,4 +226,71 @@ describe('UpdatePilot End-to-End Service Integration', () => {
       expect(j.targetVersion).toBeDefined();
     }
   });
+
+  it('8. Enforces cross-device job isolation: Device B cannot claim Device A job', async () => {
+    // Pair second distinct device
+    const { pairingCode } = await deviceService.generatePairingCode('usr_admin_test');
+    const deviceB = await deviceService.pairDevice({
+      pairingCode,
+      deviceName: 'DEVICE-B',
+      osVersion: 'Windows 11',
+      agentVersion: '1.0.0',
+    });
+
+    // Create an update job specifically for Device A
+    const apps = await applicationService.listApplications({
+      deviceId,
+      page: 1,
+      limit: 1,
+      sortBy: 'name',
+      sortOrder: 'asc',
+    });
+    const appA = apps.items[0];
+
+    const jobA = await updateService.executeUpdate({
+      applicationId: appA.id,
+      userId: 'usr_admin_test',
+    });
+
+    // Device B tries to claim Device A's job
+    const claimAttempt = await jobService.claimJobByAgent(deviceB.token, jobA.id);
+    expect(claimAttempt.claimed).toBe(false);
+
+    // Device B tries to report on Device A's job
+    await expect(
+      jobService.reportJobByAgent(deviceB.token, jobA.id, {
+        status: 'COMPLETED',
+        exitCode: 0,
+        verifiedVersion: jobA.targetVersion,
+      })
+    ).rejects.toThrow(/Forbidden/);
+  });
+
+  it('9. Rejects COMPLETED report if verifiedVersion proof is missing', async () => {
+    // Poll job for Device A
+    const poll = await jobService.pollJobForAgent(agentToken);
+    expect(poll?.id).toBeDefined();
+
+    await jobService.claimJobByAgent(agentToken, poll!.id);
+
+    // Reporting COMPLETED without verifiedVersion must be rejected
+    await expect(
+      jobService.reportJobByAgent(agentToken, poll!.id, {
+        status: 'COMPLETED',
+        exitCode: 0,
+        // verifiedVersion omitted!
+      })
+    ).rejects.toThrow(/Verification required/);
+  });
+
+  it('10. Immediately rejects revoked agents from all operations', async () => {
+    await deviceService.revokeDevice(deviceId, 'usr_admin_test');
+
+    // Heartbeat, polling, claiming must now throw Unauthorized
+    await expect(
+      deviceService.handleHeartbeat(agentToken, { status: 'ONLINE' })
+    ).rejects.toThrow(/Unauthorized/);
+
+    await expect(jobService.pollJobForAgent(agentToken)).rejects.toThrow(/Unauthorized/);
+  });
 });

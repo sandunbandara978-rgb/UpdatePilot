@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import {
   ApplicationEntity,
   DeviceEntity,
@@ -22,6 +23,9 @@ import {
 import { SecurityAuth } from '../security/auth';
 
 function getStoragePath(): string {
+  if (process.env.NODE_ENV === 'test' || process.env.VITEST) {
+    return path.join(os.tmpdir(), `updatepilot-test-storage-${process.pid}.json`);
+  }
   const cwd = process.cwd();
   let root = cwd;
   // If cwd is apps/web, walk up to monorepo root
@@ -94,20 +98,73 @@ export class MemoryStore {
     this.saveToDisk();
   }
 
-  clearDemoFixture(): boolean {
-    let removed = false;
-    if (this.devices.has('dev_win11_workstation_fixture')) {
-      this.devices.delete('dev_win11_workstation_fixture');
-      removed = true;
-    }
-    for (const [id, app] of Array.from(this.applications.entries())) {
-      if (app.deviceId === 'dev_win11_workstation_fixture') {
-        this.applications.delete(id);
-        removed = true;
+  purgeAllMockAndDemoDevices(keepDeviceId?: string): { removedDevices: number; removedApps: number } {
+    let targetDeviceId = keepDeviceId;
+    if (!targetDeviceId) {
+      const localHostName = os.hostname().toLowerCase();
+      // Find non-fixture device matching current host, or most recently active device
+      for (const dev of Array.from(this.devices.values())) {
+        if (dev.id !== 'dev_win11_workstation_fixture' && dev.deviceName.toLowerCase().includes(localHostName)) {
+          targetDeviceId = dev.id;
+          break;
+        }
+      }
+      if (!targetDeviceId) {
+        for (const dev of Array.from(this.devices.values())) {
+          if (dev.id !== 'dev_win11_workstation_fixture') {
+            targetDeviceId = dev.id;
+            break;
+          }
+        }
       }
     }
+
+    let removedDevices = 0;
+    let removedApps = 0;
+
+    for (const [id] of Array.from(this.devices.entries())) {
+      if (id !== targetDeviceId) {
+        this.devices.delete(id);
+        removedDevices++;
+      }
+    }
+
+    for (const [id, app] of Array.from(this.applications.entries())) {
+      if (app.deviceId !== targetDeviceId) {
+        this.applications.delete(id);
+        removedApps++;
+      }
+    }
+
+    for (const [id, job] of Array.from(this.updateJobs.entries())) {
+      if (job.deviceId !== targetDeviceId) {
+        this.updateJobs.delete(id);
+      }
+    }
+
+    for (const [id, scan] of Array.from(this.scanJobs.entries())) {
+      if (scan.deviceId !== targetDeviceId) {
+        this.scanJobs.delete(id);
+      }
+    }
+
+    for (const [token, cred] of Array.from(this.credentials.entries())) {
+      if (cred.deviceId !== targetDeviceId) {
+        this.credentials.delete(token);
+      }
+    }
+
+    if (targetDeviceId) {
+      this.auditEvents = this.auditEvents.filter((e) => e.deviceId === targetDeviceId);
+    }
+
     this.saveToDisk();
-    return removed;
+    return { removedDevices, removedApps };
+  }
+
+  clearDemoFixture(): boolean {
+    const res = this.purgeAllMockAndDemoDevices();
+    return res.removedDevices > 0 || res.removedApps > 0;
   }
 
   restoreDemoFixture(): void {
@@ -406,7 +463,9 @@ export class MemoryApplicationRepository implements IApplicationRepository {
     for (const a of apps) {
       let existing: ApplicationEntity | undefined;
       for (const item of Array.from(memoryStore.applications.values())) {
-        if (item.deviceId === deviceId && (item.packageId === a.packageId || item.name === a.name)) {
+        const pkgMatch = Boolean(a.packageId && item.packageId && item.packageId.toLowerCase() === a.packageId.toLowerCase());
+        const nameMatch = Boolean(item.name.toLowerCase() === a.name.toLowerCase());
+        if (item.deviceId === deviceId && (pkgMatch || nameMatch)) {
           existing = item;
           break;
         }

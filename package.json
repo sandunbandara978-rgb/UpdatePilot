@@ -20,7 +20,11 @@
     "agent:build": "npm --workspace=agent run build",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:seed": "tsx prisma/seed.ts"
+    "prisma:seed": "tsx prisma/seed.ts",
+    "release:stage": "node packaging/scripts/stage.js",
+    "release:installer": "node packaging/scripts/build-installer.js",
+    "release:verify": "node packaging/scripts/verify-release.js",
+    "release:all": "npm run release:stage && npm run release:installer && npm run release:verify"
   },
   "devDependencies": {
     "cross-env": "^10.1.0",

@@ -2,61 +2,62 @@
 
 import React, { useState, useEffect } from 'react';
 import { Navbar } from '@/components/layout/Navbar';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
 import { ConnectAgentModal } from '@/components/features/ConnectAgentModal';
-import { DeviceEntity } from '@updatepilot/shared';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
+import { Settings, Laptop, Trash2, KeyRound, Check, Moon, Sun, Info, Shield, Clock } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
-import { Settings, Laptop, KeyRound, Trash2, Moon, Sun, Shield, Check, Info } from 'lucide-react';
+
+interface DeviceItem {
+  id: string;
+  deviceName: string;
+  osVersion: string;
+  agentVersion: string;
+  status: 'ONLINE' | 'OFFLINE' | 'REVOKED';
+  lastSeenAt: string;
+}
 
 export default function SettingsPage() {
-  const [devices, setDevices] = useState<DeviceEntity[]>([]);
+  const [devices, setDevices] = useState<DeviceItem[]>([]);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [isDark, setIsDark] = useState(true);
-
-  // Preference switches with local persistence
   const [autoCheck, setAutoCheck] = useState(true);
-  const [scanInterval, setScanInterval] = useState('24');
+  const [scanInterval, setScanInterval] = useState('12');
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
   const [isClearingDemo, setIsClearingDemo] = useState(false);
-
-  const fetchDevices = async () => {
-    try {
-      const res = await fetch('/api/v1/devices');
-      const data = await res.json();
-      if (data.success) {
-        setDevices(data.data.devices);
-      }
-    } catch (err) {
-      console.error('Failed to load devices:', err);
-    }
-  };
 
   useEffect(() => {
     fetchDevices();
 
     // Load persisted theme
-    const savedTheme = localStorage.getItem('updatepilot_theme');
-    if (savedTheme === 'light') {
-      document.documentElement.classList.remove('dark');
-      setIsDark(false);
-    } else {
-      document.documentElement.classList.add('dark');
-      setIsDark(true);
-    }
+    const storedTheme = localStorage.getItem('updatepilot_theme');
+    const isDarkTheme = storedTheme === 'dark' || (!storedTheme && document.documentElement.classList.contains('dark'));
+    setIsDark(isDarkTheme);
 
     // Load persisted scan preferences
-    const savedAutoCheck = localStorage.getItem('updatepilot_auto_check');
-    if (savedAutoCheck !== null) {
-      setAutoCheck(savedAutoCheck === 'true');
+    const storedAutoCheck = localStorage.getItem('updatepilot_auto_check');
+    if (storedAutoCheck !== null) {
+      setAutoCheck(storedAutoCheck === 'true');
     }
 
-    const savedInterval = localStorage.getItem('updatepilot_scan_interval');
-    if (savedInterval) {
-      setScanInterval(savedInterval);
+    const storedInterval = localStorage.getItem('updatepilot_scan_interval');
+    if (storedInterval) {
+      setScanInterval(storedInterval);
     }
   }, []);
+
+  const fetchDevices = async () => {
+    try {
+      const res = await fetch('/api/v1/devices');
+      const data = await res.json();
+      if (data.success && data.data) {
+        setDevices(data.data);
+      }
+    } catch (err) {
+      console.error('Failed to load devices:', err);
+    }
+  };
 
   const handleRevoke = async (deviceId: string) => {
     if (confirm('Are you sure you want to revoke this agent? The device will no longer be able to poll or receive update jobs.')) {
@@ -242,9 +243,17 @@ export default function SettingsPage() {
         {/* Scan & Update Preferences */}
         <Card className="border-border/80">
           <CardHeader>
-            <CardTitle className="text-base font-bold">Scan & Discovery Preferences</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base font-bold flex items-center gap-2">
+                <Clock className="h-4 w-4 text-brand-500" />
+                <span>Scan & Discovery Preferences</span>
+              </CardTitle>
+              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                Agent-Configured / Client Preview
+              </span>
+            </div>
             <CardDescription className="text-xs">
-              Configure background polling intervals and update detection thresholds.
+              Browser preferences for local scan cadence. Note that background polling is driven by your local Windows Agent.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 text-xs">
@@ -267,7 +276,7 @@ export default function SettingsPage() {
               <div>
                 <span className="font-semibold text-foreground block">Periodic Scan Interval</span>
                 <span className="text-muted-foreground text-[11px]">
-                  Hours between background inventory refresh cycles.
+                  Target cadence between background inventory refresh cycles.
                 </span>
               </div>
               <select
@@ -285,7 +294,7 @@ export default function SettingsPage() {
             <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/40 border border-border/60 text-muted-foreground text-[11px]">
               <Info className="h-4 w-4 text-brand-500 shrink-0 mt-0.5" />
               <span>
-                <strong>Operational Note:</strong> Continuous scanning and polling for update jobs are executed securely by your running Windows Agent service (polling every 15s). Scheduled automated background runs (FR-13) can also be scheduled via Windows Task Scheduler.
+                <strong>Operational Note:</strong> In UpdatePilot&apos;s architecture, continuous polling (every 15s) and inventory synchronization are executed autonomously by the installed Windows Agent daemon or Windows Task Scheduler on your workstation. Central web controls above save client browser preferences; cloud-triggered cron scheduling is outside the stateless serverless MVP scope.
               </span>
             </div>
           </CardContent>

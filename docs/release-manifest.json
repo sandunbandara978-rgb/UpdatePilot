@@ -1,0 +1,37 @@
+{
+  "releaseVersion": "1.0.0",
+  "buildDate": "2026-10-29T05:56:36.550Z",
+  "platform": "windows-x64",
+  "installer": {
+    "fileName": "UpdatePilot-Agent-Setup-1.0.0-x64.exe",
+    "sizeBytes": 27299931,
+    "sizeFormatted": "26.04 MB",
+    "sha256": "3e18dbe4fe4762debce7c2f721d0a3fe57e9613ee6c187ab2951254c5fd439c0",
+    "targetScope": "CurrentUser (Per-user, no elevation needed for install)",
+    "requiresWinGet": true,
+    "bundledNodeVersion": "v26.4.0"
+  },
+  "components": [
+    {
+      "name": "UpdatePilot Agent Service",
+      "entryPoint": "lib/agent/dist/index.js"
+    },
+    {
+      "name": "UpdatePilot Setup Wizard",
+      "entryPoint": "Setup-Wizard.ps1"
+    },
+    {
+      "name": "Private Node.js x64 Runtime",
+      "entryPoint": "bin/node.exe"
+    },
+    {
+      "name": "CLI Utilities",
+      "entryPoint": [
+        "UpdatePilot-Setup.cmd",
+        "UpdatePilot-Scan.cmd",
+        "UpdatePilot-Status.cmd",
+        "Stop-Agent.cmd"
+      ]
+    }
+  ]
+}

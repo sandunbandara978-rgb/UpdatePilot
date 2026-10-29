@@ -44,6 +44,27 @@ export const UpdateExecuteRequestSchema = z.object({
   acknowledgedTargetVersion: z.string().min(1).optional(),
 });
 
+export const BatchUpdateExecuteSchema = z
+  .object({
+    confirmed: z.literal(true),
+    applicationIds: z.array(z.string().min(1)).optional(),
+    items: z
+      .array(
+        z.object({
+          applicationId: z.string().min(1),
+          targetVersion: z.string().min(1),
+        })
+      )
+      .optional(),
+    deviceId: z.string().optional(),
+  })
+  .refine(
+    (data) => (data.items && data.items.length > 0) || (data.applicationIds && data.applicationIds.length > 0),
+    {
+      message: 'At least one application must be selected and confirmed for update.',
+    }
+  );
+
 export const AgentJobReportSchema = z.object({
   status: z.enum(['RUNNING', 'VERIFYING', 'COMPLETED', 'FAILED', 'RESTART_REQUIRED']),
   exitCode: z.number().int().optional(),

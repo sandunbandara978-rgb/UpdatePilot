@@ -12,9 +12,19 @@ export interface SessionUser {
   email: string;
   name: string;
   role: 'ADMIN' | 'OPERATOR' | 'VIEWER';
+  exp?: number;
+  iat?: number;
 }
 
-const SESSION_SECRET = process.env.SESSION_SECRET || 'updatepilot_secure_default_session_secret_key_2026';
+export function getSessionSecret(): string {
+  if (process.env.SESSION_SECRET) {
+    return process.env.SESSION_SECRET;
+  }
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('FATAL SECURITY CONFIGURATION: SESSION_SECRET environment variable must be configured in production.');
+  }
+  return 'updatepilot_dev_fallback_secret_not_for_production';
+}
 
 export class SecurityAuth {
   /**
@@ -71,18 +81,25 @@ export class SecurityAuth {
   }
 
   /**
-   * Cryptographically signs a session token for an authenticated user.
+   * Cryptographically signs a session token for an authenticated user with server-side expiry.
    * Format: session_<base64Payload>.<hmacSignature>
    */
-  static signSessionToken(user: SessionUser): string {
-    const payloadStr = JSON.stringify(user);
+  static signSessionToken(user: SessionUser, expiresInMs: number = 7 * 24 * 60 * 60 * 1000): string {
+    const now = Date.now();
+    const payloadWithExpiry: SessionUser = {
+      ...user,
+      iat: now,
+      exp: user.exp ?? now + expiresInMs,
+    };
+    const payloadStr = JSON.stringify(payloadWithExpiry);
     const payloadBase64 = Buffer.from(payloadStr).toString('base64');
-    const signature = crypto.createHmac('sha256', SESSION_SECRET).update(payloadBase64).digest('hex');
+    const signature = crypto.createHmac('sha256', getSessionSecret()).update(payloadBase64).digest('hex');
     return `session_${payloadBase64}.${signature}`;
   }
 
   /**
-   * Verifies a session token's cryptographic signature and returns the deserialized SessionUser.
+   * Verifies a session token's cryptographic signature and validates expiration.
+   * Rejecting all unsigned, tampered, or expired tokens across all environments.
    */
   static verifySessionToken(token: string): SessionUser | null {
     if (!token || !token.startsWith('session_')) return null;
@@ -90,43 +107,35 @@ export class SecurityAuth {
     const tokenBody = token.replace('session_', '');
     const parts = tokenBody.split('.');
 
-    // Signed token format: <payload>.<sig>
-    if (parts.length === 2) {
-      const [payloadBase64, providedSig] = parts;
-      const expectedSig = crypto.createHmac('sha256', SESSION_SECRET).update(payloadBase64).digest('hex');
-
-      if (
-        providedSig.length !== expectedSig.length ||
-        !crypto.timingSafeEqual(Buffer.from(providedSig), Buffer.from(expectedSig))
-      ) {
-        return null;
-      }
-
-      try {
-        const jsonStr = Buffer.from(payloadBase64, 'base64').toString('utf-8');
-        const user = JSON.parse(jsonStr) as SessionUser;
-        if (user && user.id && user.email) {
-          return user;
-        }
-      } catch {
-        return null;
-      }
+    // Strictly enforce signature: <payload>.<sig>
+    if (parts.length !== 2) {
+      return null;
     }
 
-    // Unsigned token fallback (development & test compatibility)
-    if (parts.length === 1 && process.env.NODE_ENV !== 'production') {
-      try {
-        const jsonStr = Buffer.from(parts[0], 'base64').toString('utf-8');
-        const user = JSON.parse(jsonStr) as SessionUser;
-        if (user && user.id && user.email) {
-          return user;
-        }
-      } catch {
-        return null;
-      }
+    const [payloadBase64, providedSig] = parts;
+    const expectedSig = crypto.createHmac('sha256', getSessionSecret()).update(payloadBase64).digest('hex');
+
+    if (
+      providedSig.length !== expectedSig.length ||
+      !crypto.timingSafeEqual(Buffer.from(providedSig), Buffer.from(expectedSig))
+    ) {
+      return null;
     }
 
-    return null;
+    try {
+      const jsonStr = Buffer.from(payloadBase64, 'base64').toString('utf-8');
+      const user = JSON.parse(jsonStr) as SessionUser;
+      if (!user || !user.id || !user.email) {
+        return null;
+      }
+      // Server-validated expiration check
+      if (user.exp && Date.now() > user.exp) {
+        return null;
+      }
+      return user;
+    } catch {
+      return null;
+    }
   }
 
   /**

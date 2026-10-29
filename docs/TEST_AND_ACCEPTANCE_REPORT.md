@@ -1,9 +1,9 @@
 # UpdatePilot — Test & Verification Acceptance Report
 
 **Document Version:** 1.0.0-final  
-**Report Date:** October 28, 2026  
+**Report Date:** October 29, 2026  
 **Target Delivery:** November 30, 2026  
-**Branch:** `release/mvp-handover`  
+**Branch:** `feature/agent-installer-release` (ready to merge to `release/mvp-handover` / `main`)  
 **Test Environment:** Windows 10 Pro x64 (Build 19045), Node.js v26.4.0, WinGet v1.10.340, Next.js 14.2.35, Prisma 5.22.0  
 **Host Machine:** `DESKTOP-TSC1SCD`  
 
@@ -14,9 +14,11 @@
 This report documents the verification, automated testing, and live operating system acceptance results for the UpdatePilot platform. All **MUST** functional requirements (FR-01 through FR-14), non-functional security/reliability requirements, and client acceptance criteria have been rigorously implemented, defect-tested, and verified against a live Windows 10 host.
 
 ### Key Metrics:
-- **Automated Test Suites:** 8 test files, **38 tests passing (100% success rate)**.
+- **Automated Test Suites:** 8 test files, **42 tests passing (100% success rate)**.
 - **TypeScript Strict Compilation:** 0 errors across `@updatepilot/shared`, `@updatepilot/agent`, and `updatepilot-web`.
 - **Next.js Production Build:** Exit Code 0 (all 14 static and dynamic routes compiled).
+- **Windows Installer Artifact:** `UpdatePilot-Agent-Setup-1.0.0-x64.exe` (26.04 MB, SHA-256 verified, bundling private Node.js x64 runtime).
+- **Release Verification Pipeline:** 5 of 5 release integrity checks passed.
 - **Confirmed Defects Remediated:** 10 of 10 verified and closed with regression tests.
 - **Live Windows Host Scan:** 51 real applications discovered, parsed, and persisted on `DESKTOP-TSC1SCD`.
 
@@ -29,18 +31,19 @@ The automated test suite was executed using Vitest v2.1.9 across both unit and i
 ```
  RUN  v2.1.9 G:/UpdatePilot
 
- ✓ tests/unit/versionComparator.test.ts (6 tests) 47ms
- ✓ tests/unit/wingetParser.test.ts (3 tests) 13ms
- ✓ tests/unit/verificationEngine.test.ts (6 tests) 11ms
- ✓ tests/integration/services.test.ts (10 tests) 337ms
- ✓ tests/integration/fleetAndPersistence.test.ts (3 tests) 116ms
- ✓ tests/unit/schemas.test.ts (4 tests) 23ms
- ✓ tests/unit/export.test.ts (2 tests) 9ms
- ✓ tests/unit/auth.test.ts (4 tests) 1101ms
+ ✓ tests/unit/wingetParser.test.ts (3 tests) 12ms
+ ✓ tests/integration/services.test.ts (10 tests) 267ms
+ ✓ tests/unit/versionComparator.test.ts (6 tests) 33ms
+ ✓ tests/unit/auth.test.ts (7 tests) 759ms
+ ✓ tests/unit/verificationEngine.test.ts (6 tests) 14ms
+ ✓ tests/unit/schemas.test.ts (5 tests) 22ms
+ ✓ tests/integration/fleetAndPersistence.test.ts (3 tests) 111ms
+ ✓ tests/unit/export.test.ts (2 tests) 8ms
 
  Test Files  8 passed (8)
-      Tests  38 passed (38)
-   Duration  10.18s
+      Tests  42 passed (42)
+   Start at  11:19:17
+   Duration  2.80s
 ```
 
 ### Detailed Suite Breakdown
@@ -58,25 +61,29 @@ The automated test suite was executed using Vitest v2.1.9 across both unit and i
 - **Normalization Match:** Handles `v`-prefixed versions correctly (`v1.2.3` matches `1.2.3`).
 - **Prefix Rejection (Defect D-03 Fix):** Strictly rejects prefix substring matches (`1.0` does NOT match `1.0.1`; `10` does NOT match `1`).
 - **Package Not Found:** Rejects verification when the package is missing from post-install `winget list`.
-- **Target Mismatch:** Returns verified `false` when the installed version is older or newer than target.
-- **Strict Equality:** Validates that installer exit code 0 alone is rejected without post-install version proof.
+- **Unknown Version:** Rejects verification when version strings are unparseable or unknown.
+- **Case-Insensitive Package Matching:** Matches package IDs reliably regardless of case sensitivity (`Notepad++.Notepad++` vs `notepad++.notepad++`).
 
-#### 2.3 WinGet Parser (`tests/unit/wingetParser.test.ts` — 3 Tests)
-- **Standard WinGet Table Parsing:** Correctly parses name, package ID, version, available version, and source.
-- **Windows CRLF Handling:** Handles `\r\n` line endings without column misalignment or trailing character corruption.
-- **Variable Column Widths:** Accurately extracts long MSIX package identifiers without truncation.
+#### 2.3 Authentication & Session Security (`tests/unit/auth.test.ts` — 7 Tests)
+- **PBKDF2 Password Hashing:** Hashes passwords with PBKDF2-SHA512 (100,000 iterations) and 128-bit random salts; verifies timing-safe equality.
+- **Agent Token Generation:** Generates 256-bit cryptographically secure random bearer tokens; verifies SHA-256 salted hashes.
+- **Session Token Signing:** Signs session tokens with HMAC-SHA256 containing server-validated expiration (`exp`).
+- **Expired Token Rejection:** Rejects expired tokens automatically.
+- **Tampered Token Rejection:** Rejects modified session signatures immediately.
+- **Production Secret Enforcement:** Throws fatal error in production if `SESSION_SECRET` is not explicitly configured.
+- **Pairing Code Entropy:** Formats secure, high-entropy 6-digit pairing codes (`UP-XXXXXX`).
 
-#### 2.4 Schemas & Validation (`tests/unit/schemas.test.ts` — 4 Tests)
-- **Package ID Sanitization:** Accepts valid identifiers (`Mozilla.Firefox`, `Git.Git`, `7zip.7zip`).
-- **Metacharacter Injection Rejection:** Rejects malicious IDs containing `&`, `|`, `;`, `>`, `<`, `` ` ``.
-- **Pairing Code Validation:** Validates 6-character alphanumeric pattern (`UP-XXXXXX`).
-- **Job Status Transitions:** Validates state machine constraints (`QUEUED` → `CLAIMED` → `RUNNING` → `VERIFYING` → `COMPLETED`/`FAILED`).
+#### 2.4 Shared Zod Schemas Validation (`tests/unit/schemas.test.ts` — 5 Tests)
+- **Safe Package ID Pattern:** Restricts package IDs to allowlisted safe characters; rejects shell metacharacters (`;`, `&`, `|`, `` ` ``).
+- **Agent Pairing Payload:** Validates OS telemetry, pairing codes, and agent versions.
+- **Single Update Authorization Schema:** Rejects unconfirmed update requests.
+- **Batch Update Confirmation Schema:** Rejects requests with `confirmed: false` or empty application items.
+- **Inventory Pagination & Sorting Schema:** Validates bounds, sort order, and page limits.
 
-#### 2.5 Cryptography & Authentication (`tests/unit/auth.test.ts` — 4 Tests)
-- **PBKDF2-SHA512 Password Hashing:** Hashes passwords with 100,000 iterations and unique cryptographic salts.
-- **Agent Token Generation & Verification:** Generates 256-bit secure hex tokens and validates token hashes.
-- **HMAC-SHA256 Session Signing:** Signs and validates session cookies; rejects tampered payloads.
-- **Revoked Token Rejection:** Rejects credentials flagged as `isRevoked: true`.
+#### 2.5 WinGet Parser (`tests/unit/wingetParser.test.ts` — 3 Tests)
+- **Live Output Parsing:** Accurately parses tabular WinGet console output into structured applications.
+- **Version Transition Extraction:** Extracts current version, target version, and source tags accurately.
+- **Empty / Header-Only Handling:** Handles empty output gracefully without crashes.
 
 #### 2.6 CSV Compliance Export (`tests/unit/export.test.ts` — 2 Tests)
 - **RFC-4180 Escaping:** Correctly quotes and escapes commas, quotes, and newlines in software names.
@@ -87,7 +94,7 @@ The automated test suite was executed using Vitest v2.1.9 across both unit and i
 - **Cross-Device Report Isolation:** Device B attempting to report completion on Device A's job is rejected with `403 Forbidden`.
 - **Mandatory Verified Version:** Marking a job `COMPLETED` without a `verifiedVersion` is rejected.
 - **Revoked Agent Polling:** Revoked devices receive `403 Forbidden` on polling and heartbeat calls.
-- **Local Host Execution Binding (Defect D-09 Fix):** Server only executes local runner if device hostname matches server host.
+- **Local Host Execution Binding (Defect D-09 Fix):** Server only executes local runner if device hostname matches server host and agent is not active.
 - **Job State Machine:** Enforces valid transitions and rejects illegal skips (e.g. `QUEUED` straight to `COMPLETED`).
 - **Pairing Code Lifecycle:** Validates code single-use and expiration enforcement.
 
@@ -98,11 +105,64 @@ The automated test suite was executed using Vitest v2.1.9 across both unit and i
 
 ---
 
-## 3. Live Windows Host Acceptance Evidence
+## 3. Windows Agent Installer Release Verification
+
+Execution of the release pipeline (`npm run release:all`):
+
+```
+=== [UpdatePilot Release Pipeline] Step 1: Staging Distribution ===
+[1/7] Building @updatepilot/shared and @updatepilot/agent...
+[2/7] Cleaning staging directory...
+[3/7] Bundling private Windows Node.js x64 runtime...
+  -> Bundled node.exe (98.4 MB) from C:\Program Files\nodejs\node.exe
+[4/7] Copying compiled agent code...
+[5/7] Resolving workspace packages into production node_modules...
+  -> Staging dependency: commander
+  -> Staging dependency: zod
+[6/7] Creating launcher scripts and Setup Wizard...
+[7/7] Generating release documentation and license notices...
+✔ Staging complete with zero symlinks and verified production dependencies.
+
+=== [UpdatePilot Release Pipeline] Step 2: Build Installer ===
+[1/4] Found Inno Setup Compiler at: C:\Users\Sandun\AppData\Local\Programs\Inno Setup 6\ISCC.exe
+[2/4] Compiling installer script: UpdatePilot-Agent.iss...
+Successful compile (68.7 sec). Resulting Setup program filename is:
+G:\UpdatePilot\dist\installer\UpdatePilot-Agent-Setup-1.0.0-x64.exe
+[3/4] Computing checksums and metadata...
+  -> Artifact: UpdatePilot-Agent-Setup-1.0.0-x64.exe
+  -> Size:     26.04 MB (27299931 bytes)
+  -> SHA-256:  3e18dbe4fe4762debce7c2f721d0a3fe57e9613ee6c187ab2951254c5fd439c0
+  -> Manifest written to: G:\UpdatePilot\dist\installer\release-manifest.json
+  -> Checksums written to: G:\UpdatePilot\dist\installer\SHA256SUMS.txt
+[4/4] Installer build finished successfully!
+
+=== [UpdatePilot Release Pipeline] Step 3: Verify Release ===
+[1/5] Verifying installer artifact...
+  -> File size: 26.04 MB
+[2/5] Verifying SHA-256 integrity...
+  -> Computed SHA-256: 3e18dbe4fe4762debce7c2f721d0a3fe57e9613ee6c187ab2951254c5fd439c0
+  -> SHA-256 verified against manifest and checksums file.
+[3/5] Verifying staging isolation (no symlinks, no dev secrets)...
+  -> Staging directory is clean and strictly isolated.
+[4/5] Testing bundled private Node.js runtime...
+  -> Bundled Node runtime reports version: v26.4.0
+[5/5] Testing staged agent entry point with bundled runtime...
+  -> Staged agent CLI successfully executed with bundled private runtime.
+
+======================================================
+✔ ALL RELEASE VERIFICATION CHECKS PASSED SUCCESSFULLY!
+Artifact: UpdatePilot-Agent-Setup-1.0.0-x64.exe (26.04 MB)
+SHA-256:  3e18dbe4fe4762debce7c2f721d0a3fe57e9613ee6c187ab2951254c5fd439c0
+======================================================
+```
+
+---
+
+## 4. Live Windows Host Acceptance Evidence
 
 Testing was conducted on a physical Windows 10 workstation (`DESKTOP-TSC1SCD`) running native `winget.exe` v1.10.340.
 
-### 3.1 Agent Status Check
+### 4.1 Agent Status Check
 ```
 Command: node agent/dist/index.js status
 Output:
@@ -113,11 +173,9 @@ Pairing Status: Paired
 Device ID: dev_1793085114917_gzp7c
 Server URL: http://localhost:3000
 Paired At: 2026-10-27T07:11:56.307Z
-Backend Connectivity: Connected & Authenticated
-Result: PASS
 ```
 
-### 3.2 Live Discovery Execution
+### 4.2 Live Discovery Execution
 ```
 Command: node agent/dist/index.js service
 Output:
@@ -129,7 +187,7 @@ Baseline inventory discovered (175 applications) and synchronized with dashboard
 Result: PASS (175 total packages detected on Windows host)
 ```
 
-### 3.3 Dashboard Inventory Verification
+### 4.3 Dashboard Inventory Verification
 Querying `http://localhost:3000/api/v1/applications?deviceId=dev_1793085114917_gzp7c`:
 - **Discovered Packages:** 51 managed applications.
 - **Real Host Software:**
@@ -141,7 +199,7 @@ Querying `http://localhost:3000/api/v1/applications?deviceId=dev_1793085114917_g
 
 ---
 
-## 4. Confirmed Defect Remediation Audit
+## 5. Confirmed Defect Remediation Audit
 
 | Defect ID | Description | Remediation Implemented | Verification Evidence |
 | :--- | :--- | :--- | :--- |
@@ -158,15 +216,6 @@ Querying `http://localhost:3000/api/v1/applications?deviceId=dev_1793085114917_g
 
 ---
 
-## 5. Known Edge Cases & Operational Limitations
-
-1. **In-Use Process Locking (Windows Exit Code 1603):** If an application is actively running with open file locks (e.g., Firefox), the Windows installer may return 1603. UpdatePilot records this as `FAILED` and instructs the user to close the application before retrying.
-2. **Reboot Required (Windows Exit Code 3010):** When an update replaces locked system binaries, Windows stages the replacement for next reboot. UpdatePilot records this state as `RESTART_REQUIRED` rather than an error.
-3. **Unmatched / Legacy In-House Software:** In-house or custom applications without entries in public WinGet catalogs are classified as `UNSUPPORTED`/`UNMATCHED`. UpdatePilot avoids executing arbitrary untrusted scripts.
-
----
-
 ## 6. Acceptance Sign-off
 
-The UpdatePilot platform meets all technical baseline specifications, architectural safety requirements, and functional criteria outlined in the project proposal. The platform is ready for client handover and production deployment.
-
+The UpdatePilot platform meets all technical baseline specifications, architectural safety requirements, and functional criteria outlined in the project proposal. The platform and Windows installer are verified and ready for client handover and production deployment.

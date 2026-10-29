@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Support demo account matching
+    // Support demo account matching in development
     const isDemoMatch =
       (normalizedEmail === 'admin@updatepilot.local' || normalizedEmail === 'admin') &&
       password === 'Password123!';
@@ -82,7 +82,8 @@ export async function POST(req: NextRequest) {
 
     res.cookies.set('updatepilot_session', sessionToken, {
       path: '/',
-      httpOnly: false,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       maxAge: 60 * 60 * 24 * 7,
     });

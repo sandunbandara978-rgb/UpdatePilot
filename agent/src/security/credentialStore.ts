@@ -17,45 +17,57 @@ export interface AgentCredentials {
 export class CredentialStore {
   private configDir: string;
   private filePath: string;
+  private keyFilePath: string;
 
   constructor() {
-    const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+    const appData = process.env.LOCALAPPDATA || process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Local');
     this.configDir = path.join(appData, 'UpdatePilot');
     this.filePath = path.join(this.configDir, 'agent_credentials.enc');
+    this.keyFilePath = path.join(this.configDir, 'agent_key.dat');
   }
 
   /**
-   * Encrypts and saves credentials on the Windows host.
-   * Tries Windows DPAPI via PowerShell ProtectedData; falls back to AES-256-GCM with machine-local salt.
+   * Encrypts and saves credentials on the host.
+   * On Windows, strictly uses Windows DPAPI (CurrentUser scope).
+   * On non-Windows development/test environments, uses AES-256-GCM with a randomly generated 256-bit vault key.
    */
   async saveCredentials(creds: AgentCredentials): Promise<void> {
     if (!fs.existsSync(this.configDir)) {
-      fs.mkdirSync(this.configDir, { recursive: true });
+      fs.mkdirSync(this.configDir, { recursive: true, mode: 0o700 });
     }
 
     const json = JSON.stringify(creds);
 
-    try {
-      // Attempt Windows DPAPI ProtectedData encryption
-      const base64Encrypted = await this.encryptWithDPAPI(json);
-      fs.writeFileSync(this.filePath, JSON.stringify({ method: 'dpapi', data: base64Encrypted }), 'utf-8');
-    } catch {
-      // Fallback: AES-256-GCM using hardware-derived key
-      const key = this.deriveMachineKey();
-      const iv = crypto.randomBytes(12);
-      const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-      const encrypted = Buffer.concat([cipher.update(json, 'utf8'), cipher.final()]);
-      const tag = cipher.getAuthTag();
-
-      const payload = {
-        method: 'aes-256-gcm',
-        iv: iv.toString('hex'),
-        tag: tag.toString('hex'),
-        data: encrypted.toString('hex'),
-      };
-
-      fs.writeFileSync(this.filePath, JSON.stringify(payload), 'utf-8');
+    if (process.platform === 'win32') {
+      try {
+        const base64Encrypted = await this.encryptWithDPAPI(json);
+        fs.writeFileSync(this.filePath, JSON.stringify({ method: 'dpapi', data: base64Encrypted }), {
+          encoding: 'utf-8',
+          mode: 0o600,
+        });
+        return;
+      } catch (err) {
+        throw new Error(
+          `Security failure: Windows DPAPI encryption failed. Storing unencrypted credentials is prohibited: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
     }
+
+    // Secure fallback for non-Windows developer/test environments using random 256-bit local key
+    const key = this.getOrCreateLocalVaultKey();
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+    const encrypted = Buffer.concat([cipher.update(json, 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+
+    const payload = {
+      method: 'aes-256-gcm',
+      iv: iv.toString('hex'),
+      tag: tag.toString('hex'),
+      data: encrypted.toString('hex'),
+    };
+
+    fs.writeFileSync(this.filePath, JSON.stringify(payload), { encoding: 'utf-8', mode: 0o600 });
   }
 
   /**
@@ -74,7 +86,10 @@ export class CredentialStore {
         const decryptedJson = await this.decryptWithDPAPI(payload.data);
         return JSON.parse(decryptedJson) as AgentCredentials;
       } else if (payload.method === 'aes-256-gcm') {
-        const key = this.deriveMachineKey();
+        if (!fs.existsSync(this.keyFilePath)) {
+          return null;
+        }
+        const key = fs.readFileSync(this.keyFilePath);
         const iv = Buffer.from(payload.iv, 'hex');
         const tag = Buffer.from(payload.tag, 'hex');
         const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
@@ -98,12 +113,16 @@ export class CredentialStore {
    */
   clearCredentials(): void {
     if (fs.existsSync(this.filePath)) {
-      fs.unlinkSync(this.filePath);
+      try {
+        fs.unlinkSync(this.filePath);
+      } catch {
+        // ignore
+      }
     }
   }
 
   /**
-   * Uses Windows DPAPI (ProtectedData) via PowerShell
+   * Uses Windows DPAPI (ProtectedData) via PowerShell with CurrentUser scope.
    */
   private async encryptWithDPAPI(plainText: string): Promise<string> {
     const script = `
@@ -117,7 +136,7 @@ export class CredentialStore {
   }
 
   /**
-   * Decrypts Windows DPAPI cipher via PowerShell
+   * Decrypts Windows DPAPI cipher via PowerShell with CurrentUser scope.
    */
   private async decryptWithDPAPI(cipherBase64: string): Promise<string> {
     const script = `
@@ -131,10 +150,14 @@ export class CredentialStore {
   }
 
   /**
-   * Generates a deterministic machine key bound to this host
+   * Retrieves or generates a cryptographically random 256-bit vault key for non-Windows environments.
    */
-  private deriveMachineKey(): Buffer {
-    const seed = `${os.hostname()}:${os.userInfo().username}:${process.env.COMPUTERNAME || 'UP-WIN'}`;
-    return crypto.createHash('sha256').update(seed).digest();
+  private getOrCreateLocalVaultKey(): Buffer {
+    if (fs.existsSync(this.keyFilePath)) {
+      return fs.readFileSync(this.keyFilePath);
+    }
+    const newKey = crypto.randomBytes(32);
+    fs.writeFileSync(this.keyFilePath, newKey, { mode: 0o600 });
+    return newKey;
   }
 }

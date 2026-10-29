@@ -78,6 +78,18 @@ export class AgentApiClient {
     return (json.data !== undefined ? json.data : (json as unknown as T)) as T;
   }
 
+  async testConnectivity(): Promise<boolean> {
+    try {
+      const res = await fetch(`${this.serverUrl}/api/v1/dashboard`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
   async pair(
     pairingCode: string,
     deviceName: string,

@@ -102,7 +102,7 @@ export class UpdateService {
       metadata: { jobId: job.id, targetVersion: preview.targetVersion },
     });
 
-    // Asynchronously trigger local execution if running on Windows and device matches local host
+    // Trigger local execution ONLY if running locally without active background agent
     this.triggerAsyncLocalExecution(
       job.id,
       preview.application.id,
@@ -115,38 +115,60 @@ export class UpdateService {
   }
 
   /**
-   * Executes updates for multiple applications or all currently outdated packages.
+   * Executes updates for an explicit, reviewed package list with confirmed target versions.
    */
   async executeBatchUpdates(params: {
     applicationIds?: string[];
+    items?: Array<{ applicationId: string; targetVersion: string }>;
     deviceId?: string;
     userId: string;
   }): Promise<{ jobs: UpdateJobEntity[]; count: number }> {
-    let appsToUpdate: ApplicationEntity[] = [];
+    const createdJobs: UpdateJobEntity[] = [];
 
-    if (params.applicationIds && params.applicationIds.length > 0) {
+    if (params.items && params.items.length > 0) {
+      for (const item of params.items) {
+        try {
+          const job = await this.executeUpdate({
+            applicationId: item.applicationId,
+            acknowledgedTargetVersion: item.targetVersion,
+            userId: params.userId,
+          });
+          createdJobs.push(job);
+        } catch (err) {
+          console.warn(`Could not queue update for app ${item.applicationId}:`, err);
+        }
+      }
+    } else if (params.applicationIds && params.applicationIds.length > 0) {
       for (const id of params.applicationIds) {
         const a = await applicationRepo.findById(id);
         if (a && a.status === 'UPDATE_AVAILABLE' && a.availableVersion) {
-          appsToUpdate.push(a);
+          try {
+            const job = await this.executeUpdate({
+              applicationId: a.id,
+              acknowledgedTargetVersion: a.availableVersion,
+              userId: params.userId,
+            });
+            createdJobs.push(job);
+          } catch (err) {
+            console.warn(`Could not queue update for ${a.name}:`, err);
+          }
         }
       }
-    } else {
-      appsToUpdate = await this.getAvailableUpdates(params.deviceId);
-    }
-
-    const createdJobs: UpdateJobEntity[] = [];
-
-    for (const app of appsToUpdate) {
-      try {
-        const job = await this.executeUpdate({
-          applicationId: app.id,
-          acknowledgedTargetVersion: app.availableVersion!,
-          userId: params.userId,
-        });
-        createdJobs.push(job);
-      } catch (err) {
-        console.warn(`Could not queue update for ${app.name}:`, err);
+    } else if (params.deviceId) {
+      const apps = await this.getAvailableUpdates(params.deviceId);
+      for (const a of apps) {
+        if (a.status === 'UPDATE_AVAILABLE' && a.availableVersion) {
+          try {
+            const job = await this.executeUpdate({
+              applicationId: a.id,
+              acknowledgedTargetVersion: a.availableVersion,
+              userId: params.userId,
+            });
+            createdJobs.push(job);
+          } catch (err) {
+            console.warn(`Could not queue update for ${a.name}:`, err);
+          }
+        }
       }
     }
 
@@ -158,11 +180,12 @@ export class UpdateService {
    * and verifies installed version change.
    *
    * Safety Rules:
-   * 1. Only executes if target device matches this local host machine.
-   * 2. Binds strictly to approved targetVersion via `--version <targetVersion>`.
-   * 3. Independently rescans post-install version.
-   * 4. NEVER marks UP_TO_DATE or COMPLETED without version proof matching targetVersion.
-   * 5. Atomically claims job before starting execution.
+   * 1. Disabled if DISABLE_LOCAL_RUNNER is set or if remote background agent is active.
+   * 2. Only executes if target device explicitly matches this local host machine.
+   * 3. Binds strictly to approved targetVersion via `--version <targetVersion>`.
+   * 4. Independently rescans post-install version.
+   * 5. NEVER marks UP_TO_DATE or COMPLETED without version proof matching targetVersion.
+   * 6. Atomically claims job before starting execution; stops immediately if claim returns false.
    */
   private triggerAsyncLocalExecution(
     jobId: string,
@@ -171,7 +194,7 @@ export class UpdateService {
     targetVersion: string,
     deviceId: string
   ): void {
-    if (process.platform !== 'win32') return;
+    if (process.platform !== 'win32' || process.env.DISABLE_LOCAL_RUNNER === 'true') return;
 
     // Small delay to allow remote agent polling to claim if preferred
     setTimeout(async () => {
@@ -185,6 +208,11 @@ export class UpdateService {
         // Verify that this host is actually the target device
         const device = await deviceRepo.findById(deviceId);
         if (device) {
+          // If the device is managed by an active background agent, let the agent handle it
+          if (device.status === 'ONLINE' && device.agentVersion) {
+            return;
+          }
+
           const localHostName = os.hostname().toLowerCase();
           const targetHostName = device.deviceName.toLowerCase();
           if (targetHostName !== localHostName) {
@@ -193,8 +221,8 @@ export class UpdateService {
           }
         }
 
-        // Atomically claim the job
-        const claimed = await jobRepo.claimJob(jobId, 'UPDATE');
+        // Atomically claim the job passing the deviceId
+        const claimed = await jobRepo.claimJob(jobId, 'UPDATE', deviceId);
         if (!claimed) {
           return;
         }

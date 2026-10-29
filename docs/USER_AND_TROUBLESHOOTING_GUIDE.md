@@ -2,7 +2,7 @@
 
 **Document Version:** 1.0.0-final  
 **Target Audience:** System Administrators, Security Engineers, and End Users  
-**System Requirements:** Windows 10/11 x64, Windows Package Manager (`winget.exe` v1.6+), Node.js v18+ (for developer agent runner) or PowerShell 5.1+  
+**System Requirements:** Windows 10/11 x64, Windows Package Manager (`winget.exe` v1.6+), UpdatePilot-Agent-Setup-1.0.0-x64.exe (or Node.js v18+ / PowerShell 5.1+ for developer mode)  
 
 ---
 
@@ -34,27 +34,46 @@ To link a Windows machine to UpdatePilot:
 1. Log in to the UpdatePilot dashboard at `http://localhost:3000` (or your company's production domain).
 2. Click **Connect Agent** in the top navigation bar.
 3. Click **Generate Pairing Code**. A secure 6-digit code (e.g. `UP-892401`) will be generated. The code remains valid for **10 minutes** and is single-use.
-4. On the target Windows machine, launch either the TypeScript Agent or PowerShell Client:
-   - **Option A: TypeScript CLI Agent:**
-     ```bash
-     cd agent
-     node dist/index.js pair --code UP-892401 --server http://localhost:3000
-     ```
-   - **Option B: Standalone PowerShell Client:**
-     ```powershell
-     .\agent\UpdatePilot-Client.ps1 -ServerUrl http://localhost:3000 -PairingCode UP-892401
-     ```
-5. The agent initiates cryptographic key negotiation:
-   - The server verifies the pairing code against the user's active session.
-   - The agent receives a high-entropy bearer token, which is stored securely in the local machine's encrypted vault (`%USERPROFILE%/.updatepilot/credentials.json` with restricted NTFS permissions or Windows DPAPI).
-6. The dashboard displays a green confirmation badge: **Device Successfully Paired**.
+4. On the target Windows computer, choose one of the following methods:
+
+#### Option A: Windows Agent Setup Installer & Graphical Setup Wizard (Recommended for Client PC)
+1. Download or transfer `UpdatePilot-Agent-Setup-1.0.0-x64.exe` to the target computer.
+2. Double-click the installer. It installs per-user into `{localappdata}\Programs\UpdatePilot-Agent` without requiring administrator elevation.
+3. Upon completion, the native Windows **UpdatePilot Setup Wizard** opens automatically.
+4. Enter:
+   - **UpdatePilot Server URL:** (e.g. `https://updatepilot.yourcompany.com` or `http://localhost:3000`).
+   - Click **Test Link** to verify server connectivity.
+   - **Pairing Code:** Enter the 6-character code (e.g. `UP-892401`).
+5. Click **Pair This Computer**.
+   - The agent securely negotiates credentials with the server.
+   - Secrets are encrypted directly inside the Windows Data Protection API (`[DataProtectionScope]::CurrentUser`) vault at `%LOCALAPPDATA%\UpdatePilot\credentials.dat`.
+   - The agent background worker starts immediately and will start automatically at future user logons.
+
+#### Option B: TypeScript CLI Agent (For Developers & Source Checkouts)
+```bash
+cd agent
+node dist/index.js setup
+# Or via explicit CLI flags:
+node dist/index.js pair --code UP-892401 --server http://localhost:3000
+node dist/index.js service
+```
+
+#### Option C: Standalone PowerShell Client (Zero-Prerequisite Native Windows)
+```powershell
+.\agent\UpdatePilot-Client.ps1 -ServerUrl http://localhost:3000 -PairingCode UP-892401
+```
+
+5. The dashboard displays a green confirmation badge: **Device Successfully Paired**.
+
+---
 
 ### Journey 2: Running Discovery & Application Inventory
 
 1. Once paired, the agent automatically executes an initial baseline inventory discovery.
 2. At any time, you can trigger an on-demand scan:
    - From the Dashboard, click **Scan Now**.
-   - Or from the Windows terminal:
+   - Or from the Windows Start Menu, click **Run Software Scan Now** (or run `UpdatePilot-Scan.cmd`).
+   - Or from the terminal:
      ```bash
      node agent/dist/index.js scan --submit
      ```
@@ -65,6 +84,8 @@ To link a Windows machine to UpdatePilot:
    - **Updates Available** (flagged in orange).
    - **Up to Date** (flagged in green).
    - **Unsupported / Unmatched** (flagged in grey for custom or legacy in-house software).
+
+---
 
 ### Journey 3: Reviewing & Authorizing Updates (Human-in-the-Loop)
 
@@ -81,6 +102,8 @@ UpdatePilot **never** applies updates automatically without human authorization.
 4. You must check the explicit authorization box:
    > *"I explicitly authorize this update to version [targetVersion]"*
 5. Click **Execute Confirmed Update**.
+
+---
 
 ### Journey 4: Safe Execution & Post-Install Verification
 
@@ -106,6 +129,8 @@ Once authorized, the system initiates the 5-stage verified lifecycle:
    - If the installer failed, timed out, or the installed version remained unchanged, the job is marked `FAILED` with diagnostic logs.
    - If Windows reports exit code 3010 (`ERROR_SUCCESS_REBOOT_REQUIRED`), the job transitions cleanly to `RESTART_REQUIRED`.
 
+---
+
 ### Journey 5: Compliance Auditing & Export
 
 1. Navigate to **History & Logs** (`/history`) to view the immutable audit trail of every scan, pairing, and update.
@@ -119,8 +144,8 @@ Once authorized, the system initiates the 5-stage verified lifecycle:
 
 Under **Settings** (`/settings`):
 - **Appearance (Theme):** Switch between **Dark Mode** and **Light Mode**. Preference is immediately applied to the DOM and persisted in `localStorage`.
-- **Automatic Background Checks:** Enable or disable automatic background polling.
-- **Scan Interval:** Configure how frequently background scans check for updates (e.g., Every 4 Hours, 8 Hours, 24 Hours).
+- **Automatic Background Checks:** Clearly labeled `Agent-Configured / Client Preview` showing how the background agent checks for updates.
+- **Scan Interval:** Agent polling frequency preview (Every 4 Hours, 8 Hours, 24 Hours).
 - **Demo Fixture Isolation:** If demo mock data was preloaded for demonstration, click **Purge Demo Fixtures** to wipe all synthetic records, leaving 100% genuine live host data.
 
 ---
@@ -145,7 +170,7 @@ Under **Settings** (`/settings`):
 - **Resolution:**
   1. In the Web UI, go to **Connected Devices**, locate the device, and remove it.
   2. Click **Connect Agent** -> **Generate Pairing Code**.
-  3. Re-pair the agent using `node agent/dist/index.js pair --code <NEW_CODE>`.
+  3. Launch the Setup Wizard (from Start Menu or `UpdatePilot-Setup.cmd`) and enter the new code.
 
 ### Issue 3: Rate Limiting Rejection (HTTP 429)
 - **Symptom:** `Too many failed login attempts. Please wait 5 minutes.` or `Too many pairing attempts. Please wait 1 minute.`
@@ -167,23 +192,19 @@ Under **Settings** (`/settings`):
 
 ---
 
-## 6. Service Installation (Running Agent as Windows Service)
+## 6. Service Installation & Startup Management
 
-To run the UpdatePilot agent continuously in the background on a production workstation:
+The UpdatePilot agent includes built-in background startup management:
 
-1. **Using Node.js Background Daemon:**
-   ```powershell
-   Start-Process -NoNewWindow -FilePath "node" -ArgumentList "agent/dist/index.js service"
-   ```
-2. **Using NSSM (Non-Sucking Service Manager):**
-   ```powershell
-   nssm install UpdatePilotAgent "C:\Program Files\nodejs\node.exe" "G:\UpdatePilot\agent\dist\index.js service"
-   nssm start UpdatePilotAgent
-   ```
-3. **Using PowerShell Client via Task Scheduler:**
-   ```powershell
-   $Action = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-ExecutionPolicy Bypass -File G:\UpdatePilot\agent\UpdatePilot-Client.ps1 -ServerUrl http://localhost:3000"
-   $Trigger = New-ScheduledTaskTrigger -AtStartup
-   Register-ScheduledTask -TaskName "UpdatePilotAgent" -Action $Action -Trigger $Trigger -User "SYSTEM"
-   ```
-
+1. **Automatic Startup via Windows Installer:**
+   - The installer automatically creates a Startup shortcut in `{userstartup}\UpdatePilot Agent.lnk` pointing to `Start-Agent-Silent.vbs`.
+   - The agent starts headlessly at user login with zero console flicker and executes continuous heartbeat polling and approved update execution.
+2. **Stopping the Background Agent:**
+   - Run `Stop-Agent.cmd` from the installation directory, or execute in PowerShell:
+     ```powershell
+     Get-Process node | Where-Object { $_.Path -like '*UpdatePilot-Agent*' } | Stop-Process -Force
+     ```
+3. **Singleton Process Lock:**
+   - The agent enforces a singleton instance check using `agent.pid` in its directory to prevent duplicate concurrent processes.
+4. **Inspecting Running Status:**
+   - Run `UpdatePilot-Status.cmd` from the installation folder or Start Menu to inspect pairing status, host telemetry, and WinGet availability.

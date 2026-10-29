@@ -4,6 +4,7 @@ import {
   AgentPairRequestSchema,
   DiscoveredAppSchema,
   UpdateExecuteRequestSchema,
+  BatchUpdateExecuteSchema,
   InventoryQuerySchema,
 } from '../../packages/shared/src/schemas';
 
@@ -67,5 +68,33 @@ describe('Shared Zod Schemas Validation', () => {
     expect(parsed.limit).toBe(20);
     expect(parsed.sortBy).toBe('name');
     expect(parsed.sortOrder).toBe('asc');
+  });
+
+  it('validates batch update confirmation schema', () => {
+    const valid = {
+      confirmed: true as const,
+      items: [
+        { applicationId: 'app_1', targetVersion: '2.0.0' },
+        { applicationId: 'app_2', targetVersion: '3.1.4' },
+      ],
+      deviceId: 'dev_123',
+    };
+    expect(BatchUpdateExecuteSchema.parse(valid)).toEqual(valid);
+
+    // Reject unconfirmed batch
+    expect(() =>
+      BatchUpdateExecuteSchema.parse({
+        ...valid,
+        confirmed: false,
+      })
+    ).toThrow();
+
+    // Reject empty items & empty applicationIds
+    expect(() =>
+      BatchUpdateExecuteSchema.parse({
+        confirmed: true,
+        items: [],
+      })
+    ).toThrow();
   });
 });

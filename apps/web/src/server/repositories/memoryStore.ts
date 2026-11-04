@@ -168,12 +168,7 @@ export class MemoryStore {
   }
 
   restoreDemoFixture(): void {
-    this.seedDefaults();
-    this.saveToDisk();
-  }
-
-  private seedDefaults(): void {
-    const defaultDev: DeviceEntity = {
+    const fixtureDev: DeviceEntity = {
       id: 'dev_win11_workstation_fixture',
       userId: 'usr_default_admin',
       deviceName: 'DESKTOP-WIN11-PRO (Dev Fixture)',
@@ -184,108 +179,26 @@ export class MemoryStore {
       lastSeenAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),
     };
-    this.devices.set(defaultDev.id, defaultDev);
+    this.devices.set(fixtureDev.id, fixtureDev);
+    this.saveToDisk();
+  }
 
-    const apps: ApplicationEntity[] = [
-      {
-        id: 'app_npp_01',
-        deviceId: defaultDev.id,
-        name: 'Notepad++ (64-bit x64)',
-        packageId: 'Notepad++.Notepad++',
-        publisher: 'Notepad++ Team',
-        installedVersion: '8.8.3',
-        availableVersion: '8.9.8.1',
-        source: 'winget',
-        status: 'UPDATE_AVAILABLE',
-        lastScannedAt: new Date().toISOString(),
-      },
-      {
-        id: 'app_firefox_02',
-        deviceId: defaultDev.id,
-        name: 'Mozilla Firefox (x64 en-US)',
-        packageId: 'Mozilla.Firefox',
-        publisher: 'Mozilla',
-        installedVersion: '128.0',
-        availableVersion: '128.0',
-        source: 'winget',
-        status: 'UP_TO_DATE',
-        lastScannedAt: new Date().toISOString(),
-      },
-      {
-        id: 'app_potplayer_03',
-        deviceId: defaultDev.id,
-        name: 'PotPlayer 64-bit',
-        packageId: 'Daum.PotPlayer',
-        publisher: 'Kakao Corp.',
-        installedVersion: '25.06.25.0',
-        availableVersion: '26.08.19.0',
-        source: 'winget',
-        status: 'UPDATE_AVAILABLE',
-        lastScannedAt: new Date().toISOString(),
-      },
-      {
-        id: 'app_internal_04',
-        deviceId: defaultDev.id,
-        name: 'Proprietary In-House Tool',
-        packageId: null,
-        publisher: 'Internal IT Corp',
-        installedVersion: '1.0.4',
-        availableVersion: null,
-        source: 'local_registry',
-        status: 'UNMATCHED',
-        lastScannedAt: new Date().toISOString(),
-      },
-      {
-        id: 'app_legacy_05',
-        deviceId: defaultDev.id,
-        name: 'Legacy Accounting DB Driver',
-        packageId: null,
-        publisher: 'LegacySoft',
-        installedVersion: '2.1',
-        availableVersion: null,
-        source: 'arp',
-        status: 'UNSUPPORTED',
-        lastScannedAt: new Date().toISOString(),
-      },
-    ];
+  private seedDefaults(): void {
+    const hostname = os.hostname();
+    const osVersion = `${os.type()} ${os.release()} (${os.arch()})`;
+    const hostDeviceId = `dev_${hostname.toLowerCase().replace(/[^a-z0-9_]/g, '_')}`;
 
-    for (const a of apps) {
-      this.applications.set(a.id, a);
-    }
-
-    this.metadata.set('Notepad++.Notepad++', {
-      packageId: 'Notepad++.Notepad++',
-      latestVersion: '8.9.8.1',
-      publisherUrl: 'https://notepad-plus-plus.org/',
-      releaseNotesUrl: 'https://github.com/notepad-plus-plus/notepad-plus-plus/releases/tag/v8.9.8.1',
-      license: 'GPL-3.0-or-later',
-      installerType: 'wix',
-      sha256: '0c4f4fe82babd7688f5c1431b1357392491563af6ffedf4e37f5de0bd71babb4',
-      releaseDate: '2026-09-24',
-    });
-
-    this.securityFindings.push({
-      id: 'sec_cve_01',
-      packageId: 'Notepad++.Notepad++',
-      cveId: 'CVE-2023-40031',
-      summary: 'Buffer overflow vulnerability in earlier versions prior to 8.5.7',
-      severity: 'MEDIUM',
-      affectedVersions: '<8.5.7',
-      fixedVersion: '8.5.7',
-      advisoryUrl: 'https://nvd.nist.gov/vuln/detail/CVE-2023-40031',
-      publishedAt: '2023-09-01T00:00:00Z',
-    });
-
-    this.auditEvents.push({
-      id: 'aud_init_01',
+    const hostDev: DeviceEntity = {
+      id: hostDeviceId,
       userId: 'usr_default_admin',
-      deviceId: defaultDev.id,
-      eventType: 'SCAN_COMPLETED',
-      action: 'Initial software scan completed',
-      target: defaultDev.deviceName,
-      metadata: { discoveredCount: 5, updatesCount: 2, isFixture: true },
-      createdAt: new Date(Date.now() - 3600000).toISOString(),
-    });
+      deviceName: hostname,
+      osVersion,
+      agentVersion: '1.0.0',
+      status: 'ONLINE',
+      lastSeenAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+    };
+    this.devices.set(hostDev.id, hostDev);
   }
 }
 

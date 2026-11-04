@@ -87,7 +87,6 @@ export default function DashboardOverviewPage() {
     }
   };
 
-  const hasDemoFixture = devices.some((d) => d.id === 'dev_win11_workstation_fixture');
 
   return (
     <div>
@@ -98,35 +97,6 @@ export default function DashboardOverviewPage() {
       />
 
       <div className="p-6 sm:p-8 max-w-7xl mx-auto space-y-6">
-        {/* Banner if Demo Fixture is currently displayed */}
-        {hasDemoFixture && (
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-brand-500/10 via-brand-500/5 to-transparent border border-brand-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-xl bg-brand-500/20 text-brand-600 dark:text-brand-400 flex items-center justify-center flex-shrink-0">
-                <Sparkles className="h-5 w-5" />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-foreground">
-                  Ready to discover real software on your Windows computer?
-                </h4>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Currently showing mock demo data. Click below to inspect your real installed WinGet packages and official release updates.
-                </p>
-              </div>
-            </div>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleScanNow}
-              isLoading={isScanning}
-              className="gap-2 text-xs flex-shrink-0 shadow-md shadow-brand-500/20"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              <span>Scan This Computer Now</span>
-            </Button>
-          </div>
-        )}
-
         {scanMessage && (
           <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 flex-shrink-0" />

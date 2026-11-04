@@ -88,7 +88,6 @@ export default function SecurityPage() {
         ) : (
           <div className="space-y-4">
             {findings.map((f) => {
-              const isDemoFixture = f.id.includes('fixture') || f.id.includes('sec_cve_01');
 
               return (
                 <Card key={f.id} className="border-border/80 hover:border-amber-500/30 transition-all">
@@ -105,11 +104,7 @@ export default function SecurityPage() {
                         >
                           {f.severity}
                         </span>
-                        {isDemoFixture && (
-                          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-muted text-muted-foreground uppercase">
-                            Sample Fixture
-                          </span>
-                        )}
+                        
                       </div>
                       <span className="font-mono text-xs text-muted-foreground">Package: {f.packageId}</span>
                     </div>

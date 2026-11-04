@@ -2,6 +2,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as os from 'os';
 import { applicationRepo, jobRepo, releaseMetadataRepo, auditRepo, deviceRepo } from '../repositories';
+import { getOrFetchReleaseMetadata } from './wingetMetadata';
 import {
   SAFE_PACKAGE_ID_REGEX,
   ApplicationEntity,
@@ -48,7 +49,10 @@ export class UpdateService {
       throw new Error(`No available update version recorded for "${app.name}".`);
     }
 
-    const metadata = await releaseMetadataRepo.findByPackageId(app.packageId);
+    let metadata = await releaseMetadataRepo.findByPackageId(app.packageId);
+    if (!metadata || !metadata.sha256 || !metadata.releaseNotesUrl) {
+      metadata = await getOrFetchReleaseMetadata(app.packageId, app.availableVersion);
+    }
 
     const warnings: string[] = [];
     if (!metadata?.sha256) {

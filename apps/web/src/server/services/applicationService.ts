@@ -1,4 +1,5 @@
 import { applicationRepo, releaseMetadataRepo, securityRepo, auditRepo } from '../repositories';
+import { getOrFetchReleaseMetadata } from './wingetMetadata';
 import { deviceService } from './deviceService';
 import { compareVersions, ApplicationEntity, ApplicationStatus, ReleaseMetadataEntity, SecurityFindingEntity } from '@updatepilot/shared';
 
@@ -31,7 +32,7 @@ export class ApplicationService {
     let securityFindings: SecurityFindingEntity[] = [];
 
     if (app.packageId) {
-      metadata = await releaseMetadataRepo.findByPackageId(app.packageId);
+      metadata = await getOrFetchReleaseMetadata(app.packageId, app.availableVersion || undefined);
       securityFindings = await securityRepo.listByPackageId(app.packageId);
     }
 

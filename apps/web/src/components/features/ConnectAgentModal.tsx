@@ -76,7 +76,7 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
           // Check if any non-pending device is online
           const realOnline = data.data.devices.find(
             (d: { status: string; deviceName: string }) =>
-              d.status === 'ONLINE' && !d.deviceName.includes('Pending Pairing') && !d.deviceName.includes('(Dev Fixture)')
+              d.status === 'ONLINE' && !d.deviceName.includes('Pending Pairing')
           );
           if (realOnline) {
             setIsSuccess(true);
@@ -168,7 +168,7 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
                 <span>One-Click Real Output Discovery</span>
               </div>
               <p className="text-muted-foreground leading-relaxed">
-                UpdatePilot will directly inspect your local Windows machine via Windows Package Manager (WinGet), discover all installed software, compare version manifests against official catalogs, and replace any fixture data with your real computer inventory.
+                UpdatePilot will directly inspect your local Windows machine via Windows Package Manager (WinGet), discover all installed software, compare version manifests against official catalogs, and synchronize with your live computer inventory.
               </p>
             </div>
 

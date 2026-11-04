@@ -232,11 +232,6 @@ export default function ApplicationsPage() {
                         <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-muted/60 text-foreground font-medium text-[11px] truncate max-w-[150px]" title={deviceMap[app.deviceId] || app.deviceId}>
                           <Laptop className="h-3 w-3 text-brand-500 flex-shrink-0" />
                           <span className="truncate">{deviceMap[app.deviceId] || 'This Host'}</span>
-                          {(deviceMap[app.deviceId]?.includes('Fixture') || app.deviceId === 'dev_win11_workstation_fixture') && (
-                            <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] bg-amber-500/15 text-amber-600 dark:text-amber-400 font-semibold uppercase">
-                              Demo
-                            </span>
-                          )}
                         </span>
                       </td>
                       <td className="py-3.5 px-4 font-mono text-[11px] text-muted-foreground">

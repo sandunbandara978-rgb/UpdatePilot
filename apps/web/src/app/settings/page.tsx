@@ -25,7 +25,6 @@ export default function SettingsPage() {
   const [autoCheck, setAutoCheck] = useState(true);
   const [scanInterval, setScanInterval] = useState('12');
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
-  const [isClearingDemo, setIsClearingDemo] = useState(false);
 
   useEffect(() => {
     fetchDevices();
@@ -99,25 +98,6 @@ export default function SettingsPage() {
     setSaveSuccessMessage(msg);
     setTimeout(() => setSaveSuccessMessage(null), 3000);
   };
-
-  const handleClearDemoFixtures = async () => {
-    if (confirm('Remove sample mock applications? Real scans from your Windows host will be strictly preserved.')) {
-      setIsClearingDemo(true);
-      try {
-        const res = await fetch('/api/v1/system/clear-demo', { method: 'POST' });
-        const data = await res.json();
-        if (data.success) {
-          showSavedNotification(`Cleaned ${data.data.clearedCount} sample fixtures. Database now contains only real scans.`);
-          await fetchDevices();
-        }
-      } catch (err) {
-        console.error('Failed to clear demo data:', err);
-      } finally {
-        setIsClearingDemo(false);
-      }
-    }
-  };
-
   return (
     <div>
       <Navbar onConnectAgentClick={() => setIsConnectModalOpen(true)} />
@@ -297,34 +277,6 @@ export default function SettingsPage() {
                 <strong>Operational Note:</strong> In UpdatePilot&apos;s architecture, continuous polling (every 15s) and inventory synchronization are executed autonomously by the installed Windows Agent daemon or Windows Task Scheduler on your workstation. Central web controls above save client browser preferences; cloud-triggered cron scheduling is outside the stateless serverless MVP scope.
               </span>
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Demo Fixture Data Isolation */}
-        <Card className="border-border/80">
-          <CardHeader>
-            <CardTitle className="text-base font-bold flex items-center gap-2">
-              <Shield className="h-4 w-4 text-brand-500" />
-              <span>Demo Fixtures & Data Hygiene</span>
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Clear pre-seeded demo mock data to ensure that only real, verified software scans appear in your production database.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-xs text-muted-foreground">
-              If your database contains seeded mock software from initial development, click below to purge all demo entries. Your real machine scans and update jobs will remain untouched.
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleClearDemoFixtures}
-              isLoading={isClearingDemo}
-              className="text-xs text-destructive hover:bg-destructive/10"
-            >
-              <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-              <span>Purge Demo Fixtures</span>
-            </Button>
           </CardContent>
         </Card>
       </div>

@@ -69,17 +69,6 @@ export default function FleetDevicesPage() {
     }
   };
 
-  const handleClearDemo = async () => {
-    try {
-      await fetch('/api/v1/system/clear-demo', { method: 'POST' });
-      await refreshDevices();
-    } catch (err) {
-      console.error('Failed to clear demo:', err);
-    }
-  };
-
-  const hasDemoFixture = devices.some((d) => d.id === 'dev_win11_workstation_fixture');
-
   return (
     <div>
       <Navbar onConnectAgentClick={() => setIsConnectModalOpen(true)} />
@@ -96,13 +85,7 @@ export default function FleetDevicesPage() {
               Monitor, discover, and trigger remote scans across all connected Windows machines in your organization.
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            {hasDemoFixture && (
-              <Button variant="outline" size="sm" onClick={handleClearDemo} className="text-xs">
-                Clear Sample Demo Host
-              </Button>
-            )}
-            <Button
+          <div className="flex items-center gap-3">            <Button
               variant="primary"
               size="sm"
               onClick={() => setIsConnectModalOpen(true)}

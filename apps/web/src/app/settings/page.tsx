@@ -51,7 +51,8 @@ export default function SettingsPage() {
       const res = await fetch('/api/v1/devices');
       const data = await res.json();
       if (data.success && data.data) {
-        setDevices(data.data);
+        const list = Array.isArray(data.data) ? data.data : (data.data.devices || []);
+        setDevices(list);
       }
     } catch (err) {
       console.error('Failed to load devices:', err);
@@ -98,6 +99,7 @@ export default function SettingsPage() {
     setSaveSuccessMessage(msg);
     setTimeout(() => setSaveSuccessMessage(null), 3000);
   };
+
   return (
     <div>
       <Navbar onConnectAgentClick={() => setIsConnectModalOpen(true)} />
@@ -195,38 +197,36 @@ export default function SettingsPage() {
             <div className="flex items-center gap-4">
               <button
                 onClick={() => setThemeMode('dark')}
-                className={`p-4 rounded-xl border flex flex-col items-center gap-2 w-36 transition-all ${
-                  isDark
+                className={`p-4 rounded-xl border flex flex-col items-center gap-2 w-36 transition-all ${isDark
                     ? 'border-brand-500 bg-brand-500/10 text-brand-400 font-bold shadow-sm'
-                    : 'border-border bg-card text-muted-foreground hover:bg-muted'
-                }`}
+                    : 'border-border bg-card text-muted-foreground hover:border-border/80'
+                  }`}
               >
-                <Moon className="h-5 w-5" />
-                <span className="text-xs">Dark Industrial</span>
+                <Moon className="h-6 w-6" />
+                <span className="text-xs">Dark Mode</span>
               </button>
 
               <button
                 onClick={() => setThemeMode('light')}
-                className={`p-4 rounded-xl border flex flex-col items-center gap-2 w-36 transition-all ${
-                  !isDark
+                className={`p-4 rounded-xl border flex flex-col items-center gap-2 w-36 transition-all ${!isDark
                     ? 'border-brand-500 bg-brand-500/10 text-brand-600 font-bold shadow-sm'
-                    : 'border-border bg-card text-muted-foreground hover:bg-muted'
-                }`}
+                    : 'border-border bg-card text-muted-foreground hover:border-border/80'
+                  }`}
               >
-                <Sun className="h-5 w-5" />
-                <span className="text-xs">Light Studio</span>
+                <Sun className="h-6 w-6" />
+                <span className="text-xs">Light Mode</span>
               </button>
             </div>
           </CardContent>
         </Card>
 
-        {/* Scan & Update Preferences */}
+        {/* Agent Discovery & Scan Cadence Preferences */}
         <Card className="border-border/80">
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-base font-bold flex items-center gap-2">
                 <Clock className="h-4 w-4 text-brand-500" />
-                <span>Scan & Discovery Preferences</span>
+                <span>Agent Discovery & Scan Cadence Preferences</span>
               </CardTitle>
               <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
                 Agent-Configured / Client Preview
@@ -276,6 +276,23 @@ export default function SettingsPage() {
               <span>
                 <strong>Operational Note:</strong> In UpdatePilot&apos;s architecture, continuous polling (every 15s) and inventory synchronization are executed autonomously by the installed Windows Agent daemon or Windows Task Scheduler on your workstation. Central web controls above save client browser preferences; cloud-triggered cron scheduling is outside the stateless serverless MVP scope.
               </span>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  localStorage.setItem('updatepilot_auto_check', String(autoCheck));
+                  localStorage.setItem('updatepilot_scan_interval', scanInterval);
+                  localStorage.setItem('updatepilot_theme', isDark ? 'dark' : 'light');
+                  showSavedNotification('All platform and agent preferences saved successfully.');
+                }}
+                className="gap-2 text-xs"
+              >
+                <Check className="h-4 w-4" />
+                <span>Save All Preferences</span>
+              </Button>
             </div>
           </CardContent>
         </Card>

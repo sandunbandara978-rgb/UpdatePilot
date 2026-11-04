@@ -2,12 +2,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { Navbar } from '@/components/layout/Navbar';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
+import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { UpdateJobEntity } from '@updatepilot/shared';
 import { formatDate } from '@/lib/utils';
-import { History, Download, Terminal, ArrowRight, CheckCircle2, XCircle } from 'lucide-react';
+import { History, Download, Terminal, ArrowRight, CheckCircle2, XCircle, RefreshCw } from 'lucide-react';
 
 export default function HistoryPage() {
   const [history, setHistory] = useState<UpdateJobEntity[]>([]);
@@ -36,6 +36,8 @@ export default function HistoryPage() {
     fetchHistory();
   }, [page]);
 
+  const totalPages = Math.ceil(total / 15) || 1;
+
   return (
     <div>
       <Navbar />
@@ -53,11 +55,30 @@ export default function HistoryPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchHistory}
+              disabled={isLoading}
+              className="gap-1.5 text-xs"
+              title="Refresh ledger"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </Button>
+
             <a href="/api/v1/history/export?type=updates" download="updatepilot-update-history.csv">
-              <Button variant="outline" size="sm" className="gap-2">
+              <Button variant="outline" size="sm" className="gap-2 text-xs">
                 <Download className="h-4 w-4" />
-                <span>Export Update History (CSV)</span>
+                <span>Export Updates (CSV)</span>
+              </Button>
+            </a>
+
+            <a href="/api/v1/history/export?type=audit" download="updatepilot-audit-events.csv">
+              <Button variant="outline" size="sm" className="gap-2 text-xs">
+                <Download className="h-4 w-4" />
+                <span>Export Audit Events (CSV)</span>
               </Button>
             </a>
           </div>
@@ -114,7 +135,7 @@ export default function HistoryPage() {
                               {job.exitCode}
                             </span>
                           ) : (
-                            <span className="text-muted-foreground">â€”</span>
+                            <span className="text-muted-foreground">—</span>
                           )}
                         </td>
                         <td className="py-3.5 px-4 text-right">
@@ -155,6 +176,39 @@ export default function HistoryPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls */}
+          {total > 0 && (
+            <div className="flex items-center justify-between p-4 border-t border-border/60 text-xs text-muted-foreground">
+              <div>
+                Showing <span className="font-semibold text-foreground">{history.length}</span> of{' '}
+                <span className="font-semibold text-foreground">{total}</span> total execution records
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1 || isLoading}
+                  className="h-8 px-3"
+                >
+                  Previous
+                </Button>
+                <span className="text-xs font-semibold px-2">
+                  Page {page} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages || isLoading}
+                  className="h-8 px-3"
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
         </Card>
       </div>
     </div>

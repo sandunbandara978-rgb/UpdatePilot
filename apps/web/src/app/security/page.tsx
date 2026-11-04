@@ -1,10 +1,12 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { Navbar } from '@/components/layout/Navbar';
 import { Card, CardContent, CardHeader } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
 import { SecurityFindingEntity } from '@updatepilot/shared';
-import { ShieldCheck, ExternalLink, Info, Calendar, Database } from 'lucide-react';
+import { ShieldCheck, ExternalLink, Info, Calendar, Database, RefreshCw, ArrowUpCircle } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 
 export default function SecurityPage() {
@@ -14,18 +16,26 @@ export default function SecurityPage() {
   const [lastCheckedAt, setLastCheckedAt] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
 
+  const fetchFindings = async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/v1/security/findings');
+      const data = await res.json();
+      if (data.success) {
+        setFindings(data.data.findings || []);
+        setDisclaimer(data.data.disclaimer || '');
+        setSource(data.data.source || 'OSV / NVD');
+        setLastCheckedAt(data.data.lastCheckedAt || new Date().toISOString());
+      }
+    } catch (err) {
+      console.error('Failed to load security findings:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    fetch('/api/v1/security/findings')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success) {
-          setFindings(data.data.findings || []);
-          setDisclaimer(data.data.disclaimer || '');
-          setSource(data.data.source || 'OSV / NVD');
-          setLastCheckedAt(data.data.lastCheckedAt || new Date().toISOString());
-        }
-      })
-      .finally(() => setIsLoading(false));
+    fetchFindings();
   }, []);
 
   return (
@@ -34,14 +44,36 @@ export default function SecurityPage() {
 
       <div className="p-6 sm:p-8 max-w-7xl mx-auto space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground flex items-center gap-3">
-            <ShieldCheck className="h-7 w-7 text-brand-500" />
-            <span>Security Insights</span>
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Verified vulnerability and security advisory intelligence mapped to installed software.
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground flex items-center gap-3">
+              <ShieldCheck className="h-7 w-7 text-brand-500" />
+              <span>Security Insights & Vulnerability Intelligence</span>
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Verified vulnerability and security advisory intelligence mapped to installed software on this workstation.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchFindings}
+              disabled={isLoading}
+              className="gap-1.5 text-xs font-semibold"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <span>Refresh Advisories</span>
+            </Button>
+
+            <Link href="/updates">
+              <Button variant="primary" size="sm" className="gap-2 text-xs font-semibold">
+                <ArrowUpCircle className="h-4 w-4" />
+                <span>Go to Update Center</span>
+              </Button>
+            </Link>
+          </div>
         </div>
 
         {/* Data Limitation & Provenance Notice */}
@@ -72,8 +104,9 @@ export default function SecurityPage() {
 
         {/* Findings List */}
         {isLoading ? (
-          <div className="py-16 text-center text-xs text-muted-foreground">
-            Checking advisory repositories...
+          <div className="py-16 text-center text-xs text-muted-foreground flex flex-col items-center justify-center gap-2">
+            <RefreshCw className="h-5 w-5 animate-spin text-brand-500" />
+            <span>Checking verified advisory repositories...</span>
           </div>
         ) : findings.length === 0 ? (
           <Card className="p-12 text-center space-y-3">
@@ -88,7 +121,6 @@ export default function SecurityPage() {
         ) : (
           <div className="space-y-4">
             {findings.map((f) => {
-
               return (
                 <Card key={f.id} className="border-border/80 hover:border-amber-500/30 transition-all">
                   <CardHeader className="pb-2">
@@ -96,15 +128,13 @@ export default function SecurityPage() {
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-base text-foreground font-mono">{f.cveId}</span>
                         <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
-                            f.severity === 'CRITICAL' || f.severity === 'HIGH'
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${f.severity === 'CRITICAL' || f.severity === 'HIGH'
                               ? 'bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/30'
                               : 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30'
-                          }`}
+                            }`}
                         >
                           {f.severity}
                         </span>
-                        
                       </div>
                       <span className="font-mono text-xs text-muted-foreground">Package: {f.packageId}</span>
                     </div>
@@ -125,17 +155,27 @@ export default function SecurityPage() {
                           </span>
                         )}
                       </div>
-                      {f.advisoryUrl && (
-                        <a
-                          href={f.advisoryUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-brand-600 dark:text-brand-400 font-semibold hover:underline"
-                        >
-                          <span>Official Advisory Record</span>
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
-                      )}
+
+                      <div className="flex items-center gap-3">
+                        <Link href="/updates">
+                          <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
+                            <ArrowUpCircle className="h-3.5 w-3.5 text-brand-500" />
+                            <span>Patch in Update Center</span>
+                          </Button>
+                        </Link>
+
+                        {f.advisoryUrl && (
+                          <a
+                            href={f.advisoryUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-brand-600 dark:text-brand-400 font-semibold hover:underline"
+                          >
+                            <span>Official Advisory Record</span>
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </a>
+                        )}
+                      </div>
                     </div>
                   </CardContent>
                 </Card>

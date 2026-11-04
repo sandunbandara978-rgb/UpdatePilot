@@ -227,7 +227,7 @@ export function OutdatedSoftwareHub({
             onClick={() => setActionMessage(null)}
             className="text-xs hover:opacity-75 font-semibold px-2 py-0.5"
           >
-            âœ•
+            ✕
           </button>
         </div>
       )}
@@ -422,7 +422,7 @@ export function OutdatedSoftwareHub({
                           <span className="truncate max-w-[200px]" title={app.packageId || ''}>
                             {app.packageId}
                           </span>
-                          <span>â€¢</span>
+                          <span>•</span>
                           <span>Source: {app.source || 'winget'}</span>
                         </div>
                       </div>

@@ -37,7 +37,6 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const origin = window.location.origin;
-      // If localhost, let user know LAN IP can be used
       setServerUrl(origin);
     }
   }, []);
@@ -73,7 +72,6 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
         const res = await fetch('/api/v1/devices');
         const data = await res.json();
         if (data.success && data.data.devices.length > 0) {
-          // Check if any non-pending device is online
           const realOnline = data.data.devices.find(
             (d: { status: string; deviceName: string }) =>
               d.status === 'ONLINE' && !d.deviceName.includes('Pending Pairing')
@@ -226,11 +224,32 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
                   </div>
                 </div>
 
+                {/* Download Desktop Installer Card */}
+                <div className="p-4 rounded-xl border border-brand-500/30 bg-brand-500/5 flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div>
+                    <h5 className="font-bold text-xs text-foreground flex items-center gap-2">
+                      <Download className="h-4 w-4 text-brand-500" />
+                      <span>Windows Desktop Agent Installer (.exe)</span>
+                    </h5>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      Standalone Inno Setup installer bundling a private Node.js runtime and Setup Wizard (26.04 MB).
+                    </p>
+                  </div>
+                  <a
+                    href={`${serverUrl}/api/v1/agent/download`}
+                    download="UpdatePilot-Agent-Setup-1.0.0-x64.exe"
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-semibold text-xs shadow-md shadow-brand-500/20 transition-all flex-shrink-0"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>Download Installer</span>
+                  </a>
+                </div>
+
                 {/* Terminal Instructions */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span className="font-semibold text-foreground">
-                      On any remote Windows PC, open PowerShell and run:
+                      Or on any remote Windows PC, open PowerShell and run:
                     </span>
                     <button
                       onClick={() => copyToClipboard(networkCommand)}
@@ -245,15 +264,15 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-2">
+                <div className="flex items-center justify-between pt-1">
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
                     <span>Listening for remote computer handshake...</span>
                   </div>
                   <a
-                    href={`${serverUrl}/api/v1/agent/install`}
+                    href={`${serverUrl}/api/v1/agent/download?format=ps1`}
                     download="UpdatePilot-Client.ps1"
-                    className="text-xs text-brand-600 hover:underline flex items-center gap-1"
+                    className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
                   >
                     <Download className="h-3.5 w-3.5" />
                     <span>Download Script File</span>

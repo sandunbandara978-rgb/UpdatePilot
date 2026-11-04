@@ -240,7 +240,7 @@ export default function ApplicationsPage() {
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-muted-foreground truncate max-w-[140px]" title={app.publisher || 'Unknown'}>
-                        {app.publisher || 'â€”'}
+                        {app.publisher || '—'}
                       </td>
                       <td className="py-3.5 px-4 font-mono text-foreground font-medium">
                         {app.installedVersion}
@@ -249,7 +249,7 @@ export default function ApplicationsPage() {
                         {app.availableVersion ? (
                           <span className="text-blue-600 dark:text-blue-400 font-bold">{app.availableVersion}</span>
                         ) : (
-                          <span className="text-muted-foreground">â€”</span>
+                          <span className="text-muted-foreground">—</span>
                         )}
                       </td>
                       <td className="py-3.5 px-4">

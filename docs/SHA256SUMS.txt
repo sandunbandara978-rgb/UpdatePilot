@@ -1,1 +1,1 @@
-3e18dbe4fe4762debce7c2f721d0a3fe57e9613ee6c187ab2951254c5fd439c0  UpdatePilot-Agent-Setup-1.0.0-x64.exe
+d424ff2c794bafc0742ce3f5e23982a247f0db38eed5fd7cc96d8207ef7b5926  UpdatePilot-Agent-Setup-1.0.0-x64.exe

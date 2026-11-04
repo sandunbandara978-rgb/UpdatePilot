@@ -124,6 +124,13 @@ WshShell.Run Chr(34) & nodeExe & Chr(34) & " " & Chr(34) & agentJs & Chr(34) & "
 `;
 fs.writeFileSync(path.join(STAGING_DIR, 'Start-Agent-Silent.vbs'), silentVbs, 'utf-8');
 
+// Launch-Dashboard.vbs (Opens Front End Dashboard silently in default browser without console)
+const launchDashVbs = `' UpdatePilot Open Front End Web Dashboard
+Set WshShell = CreateObject("WScript.Shell")
+WshShell.Run "cmd.exe /c start http://localhost:3000", 0, False
+`;
+fs.writeFileSync(path.join(STAGING_DIR, 'Launch-Dashboard.vbs'), launchDashVbs, 'utf-8');
+
 // Stop-Agent.cmd (Gracefully stops background agent worker)
 const stopCmd = `@echo off
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Get-Process node -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*UpdatePilot-Agent*' } | Stop-Process -Force"

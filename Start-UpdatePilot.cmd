@@ -19,7 +19,7 @@ if %errorlevel% neq 0 (
 )
 
 echo [2/2] Launching Web Dashboard on http://localhost:3000...
-start "" "http://localhost:3000"
+echo Waiting for Next.js to start listening before launching default browser...
+start /b "" cmd /c "for /l %%i in (1,1,30) do ( curl.exe -s -o nul http://localhost:3000 && ( start http://localhost:3000 & exit ) || timeout /t 1 /nobreak >nul )"
 
 npm run dev
-

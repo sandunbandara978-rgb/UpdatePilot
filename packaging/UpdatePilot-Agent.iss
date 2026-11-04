@@ -36,23 +36,25 @@ CloseApplicationsFilter=*.exe
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 Name: "startup"; Description: "Start UpdatePilot Agent automatically at user logon"; GroupDescription: "Background Service:"
 
 [Files]
 Source: "staging\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
+Name: "{group}\UpdatePilot Front End Dashboard"; Filename: "wscript.exe"; Parameters: """{app}\Launch-Dashboard.vbs"""; WorkingDir: "{app}"; Comment: "Open UpdatePilot Web Dashboard"
 Name: "{group}\UpdatePilot Setup Wizard"; Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\Setup-Wizard.ps1"""; WorkingDir: "{app}"; Comment: "Configure server URL and pairing code"
 Name: "{group}\UpdatePilot Agent Service"; Filename: "{app}\bin\node.exe"; Parameters: """{app}\lib\agent\dist\index.js"" service"; WorkingDir: "{app}"; Comment: "Run UpdatePilot background agent"
 Name: "{group}\Run Software Scan Now"; Filename: "{app}\UpdatePilot-Scan.cmd"; WorkingDir: "{app}"; Comment: "Scan installed applications immediately"
 Name: "{group}\Agent Connection Status"; Filename: "{app}\UpdatePilot-Status.cmd"; WorkingDir: "{app}"; Comment: "Inspect device pairing and status"
 Name: "{group}\Uninstall UpdatePilot Agent"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\UpdatePilot Setup Wizard"; Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\Setup-Wizard.ps1"""; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autodesktop}\UpdatePilot Front End Dashboard"; Filename: "wscript.exe"; Parameters: """{app}\Launch-Dashboard.vbs"""; WorkingDir: "{app}"; Tasks: desktopicon; Comment: "Open UpdatePilot Web Dashboard"
 Name: "{userstartup}\UpdatePilot Agent"; Filename: "wscript.exe"; Parameters: """{app}\Start-Agent-Silent.vbs"""; WorkingDir: "{app}"; Tasks: startup
 
 [Run]
-Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\Setup-Wizard.ps1"""; Description: "Launch Setup Wizard to pair with your dashboard now"; Flags: nowait postinstall skipifsilent
+Filename: "wscript.exe"; Parameters: """{app}\Start-Agent-Silent.vbs"""; Flags: nowait runhidden
+Filename: "wscript.exe"; Parameters: """{app}\Launch-Dashboard.vbs"""; Description: "Open UpdatePilot Front End Dashboard in browser"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
 ; Stop any running UpdatePilot agent processes before uninstalling

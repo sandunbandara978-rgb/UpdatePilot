@@ -1,15 +1,15 @@
 {
   "releaseVersion": "1.0.0",
-  "buildDate": "2026-11-04T07:10:23.592Z",
+  "buildDate": "2026-11-04T07:48:08.279Z",
   "platform": "windows-x64",
   "installer": {
     "fileName": "UpdatePilot-Agent-Setup-1.0.0-x64.exe",
-    "sizeBytes": 27299963,
-    "sizeFormatted": "26.04 MB",
-    "sha256": "5d7c865960bd3ea354199358ebf8372207d3c70a1886108e6fa893a71df67c35",
+    "sizeBytes": 27562333,
+    "sizeFormatted": "26.29 MB",
+    "sha256": "a256c0a23b08bfe8886fa2df4405cdb4972d70a4e05407032e756f8d34f0e648",
     "targetScope": "CurrentUser (Per-user, no elevation needed for install)",
     "requiresWinGet": true,
-    "bundledNodeVersion": "v26.4.0"
+    "bundledNodeVersion": "v26.13.0"
   },
   "components": [
     {

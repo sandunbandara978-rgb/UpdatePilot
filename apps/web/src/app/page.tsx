@@ -55,6 +55,39 @@ export default function DashboardOverviewPage() {
     }
   }, [selectedDeviceId]);
 
+  /**
+   * Runs a real-time WinGet dual-scan (winget list + winget upgrade) and
+   * refreshes all dashboard metrics.  Used both on first mount (silent=true)
+   * and by the manual "Run Discovery" button (silent=false).
+   */
+  const runLiveScan = useCallback(async (silent = false) => {
+    if (!silent) setIsScanning(true);
+    if (!silent) setScanMessage(null);
+    try {
+      const res = await fetch('/api/v1/system/scan-local', { method: 'POST' });
+      const data = await res.json();
+      if (data.success && !silent) {
+        setScanMessage(
+          `Discovered ${data.data.appsSaved} applications (${data.data.updatesCount} updates pending) on ${data.data.deviceName}.`
+        );
+      }
+      await refreshDevices();
+      await fetchDashboardData();
+    } catch (err) {
+      console.error('Live scan failed:', err);
+    } finally {
+      if (!silent) setIsScanning(false);
+    }
+  }, [fetchDashboardData, refreshDevices]);
+
+  // On first mount: always run a real-time WinGet scan so the dashboard
+  // reflects live installed software and actual available updates — never stale cache.
+  useEffect(() => {
+    runLiveScan(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Re-fetch (without full rescan) when selected device changes after first load.
   useEffect(() => {
     fetchDashboardData();
   }, [fetchDashboardData]);
@@ -63,23 +96,22 @@ export default function DashboardOverviewPage() {
     setIsScanning(true);
     setScanMessage(null);
     try {
-      // 1. If scanning local host or all computers: run direct local scan
+      // Local host (or All): run real-time dual winget scan
       if (
         selectedDeviceId === 'ALL' ||
         selectedDeviceId.startsWith('dev_local_') ||
+        !activeDevice ||
         activeDevice?.deviceName.includes('(This PC)')
       ) {
-        const res = await fetch('/api/v1/system/scan-local', { method: 'POST' });
-        const data = await res.json();
-        if (data.success) {
-          setScanMessage(`Discovered ${data.data.appsSaved} applications (${data.data.updatesCount} updates) on ${data.data.deviceName}!`);
-        }
-      } else if (selectedDeviceId) {
+        await runLiveScan(false);
+        return; // runLiveScan manages isScanning itself
+      } else {
+        // Remote device — dispatch scan job to the agent
         await fetch(`/api/v1/devices/${selectedDeviceId}/scans`, { method: 'POST' });
         setScanMessage(`Scan job dispatched to ${activeDevice?.deviceName}.`);
+        await refreshDevices();
+        await fetchDashboardData();
       }
-      await refreshDevices();
-      await fetchDashboardData();
     } catch (err) {
       console.error('Scan failed:', err);
     } finally {

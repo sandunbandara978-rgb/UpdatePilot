@@ -63,16 +63,45 @@ export class WinGetAdapter {
    */
   async listInstalledApps(): Promise<WinGetApp[]> {
     try {
-      // Execute winget list with non-interactive agreement flags
-      const { stdout } = await execFileAsync(
-        this.wingetExecutable,
-        ['list', '--accept-source-agreements'],
-        { maxBuffer: 10 * 1024 * 1024 }
-      );
+      // Execute winget list AND winget upgrade in parallel for real-time accurate discovery
+      const [listResult, upgradeResult] = await Promise.allSettled([
+        execFileAsync(this.wingetExecutable, ['list', '--accept-source-agreements'], {
+          maxBuffer: 15 * 1024 * 1024,
+        }),
+        execFileAsync(this.wingetExecutable, ['upgrade', '--accept-source-agreements'], {
+          maxBuffer: 15 * 1024 * 1024,
+        }),
+      ]);
 
-      return this.parseListOutput(stdout);
+      const listStdout = listResult.status === 'fulfilled' ? listResult.value.stdout : '';
+      const upgradeStdout = upgradeResult.status === 'fulfilled' ? upgradeResult.value.stdout : '';
+
+      const installed = this.parseListOutput(listStdout);
+      const upgradable = this.parseListOutput(upgradeStdout);
+
+      // Authoritative upgrade lookup map: packageId -> availableVersion
+      const upgradeMap = new Map<string, string>();
+      for (const row of upgradable) {
+        if (row.packageId && row.availableVersion) {
+          upgradeMap.set(row.packageId.toLowerCase(), row.availableVersion);
+        }
+      }
+
+      // Merge real available versions from winget upgrade into installed apps
+      return installed.map((app) => {
+        if (app.packageId) {
+          const upgradeAvailable = upgradeMap.get(app.packageId.toLowerCase());
+          if (upgradeAvailable) {
+            return {
+              ...app,
+              availableVersion: upgradeAvailable,
+            };
+          }
+        }
+        return app;
+      });
     } catch (err: unknown) {
-      console.error('Error executing winget list:', err);
+      console.error('Error executing winget discovery:', err);
       throw new Error(`Failed to list applications via WinGet: ${err instanceof Error ? err.message : String(err)}`);
     }
   }

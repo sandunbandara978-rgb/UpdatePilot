@@ -339,7 +339,31 @@ $btnPair.Add_Click({
         $p.WaitForExit()
 
         if ($p.ExitCode -eq 0) {
-            $txtLog.Text = $out + "\`r\`n[DPAPI] Credentials securely encrypted in Windows vault."
+            $txtLog.Text = $out + "\`r\`n[DPAPI] Credentials securely encrypted in Windows vault.\`r\`n"
+            $txtLog.AppendText("Performing baseline software scan and synchronizing with dashboard...\`r\`n")
+
+            # 1. Trigger initial discovery scan and submit
+            $scanInfo = New-Object System.Diagnostics.ProcessStartInfo
+            $scanInfo.FileName = $NodeExe
+            $scanInfo.Arguments = "\`"$AgentJs\`" scan --submit"
+            $scanInfo.WorkingDirectory = $ScriptDir
+            $scanInfo.CreateNoWindow = $true
+            $scanInfo.UseShellExecute = $false
+            $sp = [System.Diagnostics.Process]::Start($scanInfo)
+            $sp.WaitForExit()
+
+            # 2. Start silent background service
+            $vbsPath = Join-Path $ScriptDir "Start-Agent-Silent.vbs"
+            if (Test-Path $vbsPath) {
+                Start-Process "wscript.exe" -ArgumentList "\`"$vbsPath\`"" -WorkingDirectory $ScriptDir
+            } else {
+                Start-Process -NoNewWindow -FilePath $NodeExe -ArgumentList "\`"$AgentJs\`" service" -WorkingDirectory $ScriptDir
+            }
+
+            $txtLog.AppendText("SUCCESS: Host paired, software discovered, and background update agent is active!\`r\`n")
+            $btnPair.Enabled = $false
+            $btnPair.Text = "Paired and Running"
+            $btnPair.BackColor = [System.Drawing.Color]::FromArgb(16, 185, 129)
         } else {
             $txtLog.Text = "Pairing failed:\`r\`n" + $err + "\`r\`n" + $out
         }

@@ -28,6 +28,7 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [serverUrl, setServerUrl] = useState('http://localhost:3000');
+  const [lanIps, setLanIps] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -191,21 +192,39 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
         {/* TAB 2: NETWORK / FLEET AGENT PAIRING */}
         {activeTab === 'network' && !isSuccess && (
           <div className="space-y-5">
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                <Server className="h-3.5 w-3.5 text-brand-500" />
-                <span>UpdatePilot Server URL for Remote Machines</span>
-              </label>
+            <div className="space-y-2 p-3.5 rounded-xl bg-muted/40 border border-border/60">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                  <Server className="h-3.5 w-3.5 text-brand-500" />
+                  <span>UpdatePilot Server URL (for Remote PCs)</span>
+                </label>
+                {lanIps.length > 0 && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-600 dark:text-brand-400 font-semibold">
+                    Detected LAN IP: {lanIps[0]}
+                  </span>
+                )}
+              </div>
               <p className="text-[11px] text-muted-foreground">
-                Ensure remote computers can reach this IP address over your local network or VPN.
+                Other computers on your Wi-Fi/network connect to this address. Use your machine&apos;s network IP (not &quot;localhost&quot;):
               </p>
-              <input
-                type="text"
-                value={serverUrl}
-                onChange={(e) => setServerUrl(e.target.value)}
-                placeholder="http://192.168.1.50:3000"
-                className="w-full text-xs font-mono px-3 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-brand-500"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={serverUrl}
+                  onChange={(e) => setServerUrl(e.target.value)}
+                  placeholder="http://192.168.1.50:3000"
+                  className="w-full text-xs font-mono px-3 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-brand-500"
+                />
+                {lanIps.length > 0 && serverUrl !== `http://${lanIps[0]}:3000` && (
+                  <button
+                    type="button"
+                    onClick={() => setServerUrl(`http://${lanIps[0]}:3000`)}
+                    className="whitespace-nowrap px-2.5 py-2 rounded-lg bg-brand-500/10 hover:bg-brand-500/20 text-brand-600 dark:text-brand-400 text-xs font-semibold transition-all"
+                  >
+                    Use {lanIps[0]}
+                  </button>
+                )}
+              </div>
             </div>
 
             {pairingCode && (

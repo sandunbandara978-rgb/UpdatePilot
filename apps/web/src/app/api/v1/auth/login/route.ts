@@ -15,7 +15,7 @@ const LoginSchema = z.object({
 export async function POST(req: NextRequest) {
   try {
     const ip = req.headers.get('x-forwarded-for') || req.ip || '127.0.0.1';
-    const rateCheck = rateLimiter.check(`login:${ip}`, 5, 5 * 60 * 1000);
+    const rateCheck = rateLimiter.check(`login:${ip}`, 20, 5 * 60 * 1000);
     if (!rateCheck.allowed) {
       return jsonError(
         `Too many login attempts. Please wait ${Math.ceil(rateCheck.resetInMs / 1000)} seconds before retrying.`,
@@ -31,6 +31,23 @@ export async function POST(req: NextRequest) {
     let user = await userRepo.findByEmail(normalized);
     if (!user && !normalized.includes('@')) {
       user = await userRepo.findByEmail(`${normalized}@updatepilot.local`);
+    }
+
+    // Bootstrap default administrator automatically on an empty database if signing in with default admin credentials
+    const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'Password123!';
+    if (
+      !user &&
+      (normalized === 'admin@updatepilot.local' || normalized === 'admin') &&
+      password === defaultPassword &&
+      (await userRepo.count()) === 0
+    ) {
+      user = await userRepo.create({
+        id: 'usr_default_admin',
+        email: 'admin@updatepilot.local',
+        name: 'Local Administrator',
+        passwordHash: SecurityAuth.hashPassword(defaultPassword),
+        role: 'ADMIN',
+      });
     }
 
     if (!user) {
@@ -54,6 +71,9 @@ export async function POST(req: NextRequest) {
     };
 
     const sessionToken = SecurityAuth.signSessionToken(authenticatedUser);
+    const isHttps =
+      req.nextUrl.protocol === 'https:' ||
+      req.headers.get('x-forwarded-proto')?.split(',')[0].trim() === 'https';
 
     const res = jsonSuccess({
       user: authenticatedUser,
@@ -63,7 +83,7 @@ export async function POST(req: NextRequest) {
     res.cookies.set('updatepilot_session', sessionToken, {
       path: '/',
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: isHttps,
       sameSite: 'lax',
       maxAge: 60 * 60 * 24 * 7,
     });

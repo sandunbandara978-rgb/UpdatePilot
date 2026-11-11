@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Laptop,
   ShieldCheck,
@@ -39,7 +38,8 @@ interface RememberedAccount {
 }
 
 export default function LoginPage() {
-  const router = useRouter();
+  const emailInputRef = useRef<HTMLInputElement>(null);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState(SHOW_DEV_CREDENTIALS ? DEFAULT_ACCOUNT.email : '');
@@ -48,6 +48,7 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autofillNotice, setAutofillNotice] = useState<string | null>(null);
   const [isCopiedUser, setIsCopiedUser] = useState(false);
   const [isCopiedPass, setIsCopiedPass] = useState(false);
   const [isAutofilled, setIsAutofilled] = useState(SHOW_DEV_CREDENTIALS);
@@ -80,27 +81,34 @@ export default function LoginPage() {
       const endpoint = authMode === 'login' ? '/api/v1/auth/login' : '/api/v1/auth/register';
       const payload =
         authMode === 'login'
-          ? { email: targetEmail, password: targetPassword }
-          : { name: targetName || '', email: targetEmail, password: targetPassword };
+          ? { email: targetEmail.trim(), password: targetPassword }
+          : { name: (targetName || '').trim(), email: targetEmail.trim(), password: targetPassword };
 
       const res = await fetch(endpoint, {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: { success?: boolean; data?: { user?: unknown }; error?: { message?: string } } = {};
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        setError(`Server returned an unexpected response (HTTP ${res.status}).`);
+        return;
+      }
 
-      if (data.success) {
+      if (res.ok && data.success && data.data?.user) {
         if (rememberMe) {
           localStorage.setItem('updatepilot_user', JSON.stringify(data.data.user));
         } else {
           localStorage.removeItem('updatepilot_user');
         }
-        router.push('/');
-        router.refresh();
+        window.location.assign('/');
       } else {
-        setError(data.error?.message || 'Authentication failed. Please check your details.');
+        setError(data.error?.message || `Authentication failed (HTTP ${res.status}). Please check your details.`);
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Connection error during authentication');
@@ -111,21 +119,34 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await authenticate(mode, email, password, name);
+    // Read DOM ref fallback in case browser password manager populated fields without triggering onChange
+    const effectiveEmail = (email || emailInputRef.current?.value || '').trim();
+    const effectivePassword = password || passwordInputRef.current?.value || '';
+    if (!effectiveEmail || !effectivePassword) {
+      setError('Please enter both your email/username and password.');
+      return;
+    }
+    await authenticate(mode, effectiveEmail, effectivePassword, name);
   };
 
   const autofillDemo = () => {
     setMode('login');
     setEmail(DEFAULT_ACCOUNT.email);
     setPassword(DEFAULT_ACCOUNT.password);
+    if (emailInputRef.current) emailInputRef.current.value = DEFAULT_ACCOUNT.email;
+    if (passwordInputRef.current) passwordInputRef.current.value = DEFAULT_ACCOUNT.password;
     setError(null);
     setIsAutofilled(true);
+    setAutofillNotice('Admin login details filled into the form below.');
+    setTimeout(() => setAutofillNotice(null), 3000);
   };
 
   const autofillAndSignIn = async () => {
     setMode('login');
     setEmail(DEFAULT_ACCOUNT.email);
     setPassword(DEFAULT_ACCOUNT.password);
+    if (emailInputRef.current) emailInputRef.current.value = DEFAULT_ACCOUNT.email;
+    if (passwordInputRef.current) passwordInputRef.current.value = DEFAULT_ACCOUNT.password;
     setIsAutofilled(true);
     await authenticate('login', DEFAULT_ACCOUNT.email, DEFAULT_ACCOUNT.password);
   };
@@ -319,6 +340,13 @@ export default function LoginPage() {
             </div>
           )}
 
+          {autofillNotice && !error && (
+            <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-2">
+              <Check className="h-3.5 w-3.5 shrink-0" />
+              <span>{autofillNotice}</span>
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode === 'register' && (
               <div className="space-y-1.5">
@@ -348,6 +376,7 @@ export default function LoginPage() {
               <div className="relative">
                 <Mail className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                 <input
+                  ref={emailInputRef}
                   id="login-email"
                   name={mode === 'login' ? 'username' : 'email'}
                   type={mode === 'register' ? 'email' : 'text'}
@@ -379,6 +408,7 @@ export default function LoginPage() {
               <div className="relative">
                 <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                 <input
+                  ref={passwordInputRef}
                   id="login-password"
                   name="password"
                   type={showPassword ? 'text' : 'password'}

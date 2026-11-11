@@ -47,12 +47,15 @@ export async function POST(req: NextRequest) {
     };
 
     const sessionToken = SecurityAuth.signSessionToken(sessionUser);
+    const isHttps =
+      req.nextUrl.protocol === 'https:' ||
+      req.headers.get('x-forwarded-proto')?.split(',')[0].trim() === 'https';
     const res = jsonSuccess({ user: sessionUser, token: sessionToken }, 201);
 
     res.cookies.set('updatepilot_session', sessionToken, {
       path: '/',
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: isHttps,
       sameSite: 'lax',
       maxAge: 60 * 60 * 24 * 7,
     });

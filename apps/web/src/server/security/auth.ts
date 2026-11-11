@@ -16,9 +16,25 @@ export interface SessionUser {
   iat?: number;
 }
 
+let warnedVercelFallbackSecret = false;
+
 export function getSessionSecret(): string {
   if (process.env.SESSION_SECRET) {
     return process.env.SESSION_SECRET;
+  }
+  if (process.env.VERCEL) {
+    if (!warnedVercelFallbackSecret) {
+      warnedVercelFallbackSecret = true;
+      console.warn(
+        'WARNING: SESSION_SECRET is not set on Vercel. Using derived deployment secret. Configure SESSION_SECRET in Vercel Project Settings for production hardening.'
+      );
+    }
+    const seed =
+      process.env.VERCEL_PROJECT_ID ||
+      process.env.VERCEL_GIT_REPO_ID ||
+      process.env.VERCEL_URL ||
+      'updatepilot-vercel-deployment';
+    return crypto.createHash('sha256').update(`updatepilot:${seed}`).digest('hex');
   }
   if (process.env.NODE_ENV === 'production') {
     throw new Error('FATAL SECURITY CONFIGURATION: SESSION_SECRET environment variable must be configured in production.');
@@ -112,17 +128,17 @@ export class SecurityAuth {
       return null;
     }
 
-    const [payloadBase64, providedSig] = parts;
-    const expectedSig = crypto.createHmac('sha256', getSessionSecret()).update(payloadBase64).digest('hex');
-
-    if (
-      providedSig.length !== expectedSig.length ||
-      !crypto.timingSafeEqual(Buffer.from(providedSig), Buffer.from(expectedSig))
-    ) {
-      return null;
-    }
-
     try {
+      const [payloadBase64, providedSig] = parts;
+      const expectedSig = crypto.createHmac('sha256', getSessionSecret()).update(payloadBase64).digest('hex');
+
+      if (
+        providedSig.length !== expectedSig.length ||
+        !crypto.timingSafeEqual(Buffer.from(providedSig), Buffer.from(expectedSig))
+      ) {
+        return null;
+      }
+
       const jsonStr = Buffer.from(payloadBase64, 'base64').toString('utf-8');
       const user = JSON.parse(jsonStr) as SessionUser;
       if (!user || !user.id || !user.email) {

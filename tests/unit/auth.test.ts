@@ -85,13 +85,15 @@ describe('SecurityAuth Cryptographic Engine', () => {
     expect(parsed).toBeNull();
   });
 
-  it('strictly enforces SESSION_SECRET in production mode', () => {
+  it('strictly enforces SESSION_SECRET in non-Vercel production mode', () => {
     const origEnv = process.env.NODE_ENV;
     const origSecret = process.env.SESSION_SECRET;
+    const origVercel = process.env.VERCEL;
 
     try {
       process.env.NODE_ENV = 'production';
       delete process.env.SESSION_SECRET;
+      delete process.env.VERCEL;
 
       expect(() => {
         SecurityAuth.signSessionToken({
@@ -106,6 +108,40 @@ describe('SecurityAuth Cryptographic Engine', () => {
       if (origSecret) {
         process.env.SESSION_SECRET = origSecret;
       }
+      if (origVercel) {
+        process.env.VERCEL = origVercel;
+      }
+    }
+  });
+
+  it('derives consistent fallback session secret on Vercel when SESSION_SECRET is unset', () => {
+    const origEnv = process.env.NODE_ENV;
+    const origSecret = process.env.SESSION_SECRET;
+    const origVercel = process.env.VERCEL;
+    const origProjectId = process.env.VERCEL_PROJECT_ID;
+
+    try {
+      process.env.NODE_ENV = 'production';
+      process.env.VERCEL = '1';
+      process.env.VERCEL_PROJECT_ID = 'prj_test_vercel_123';
+      delete process.env.SESSION_SECRET;
+
+      const token = SecurityAuth.signSessionToken({
+        id: 'usr_default_admin',
+        email: 'admin@updatepilot.local',
+        name: 'Local Administrator',
+        role: 'ADMIN',
+      });
+      const verified = SecurityAuth.verifySessionToken(token);
+      expect(verified?.email).toBe('admin@updatepilot.local');
+      expect(verified?.role).toBe('ADMIN');
+    } finally {
+      process.env.NODE_ENV = origEnv;
+      if (origSecret) process.env.SESSION_SECRET = origSecret;
+      if (origVercel) process.env.VERCEL = origVercel;
+      else delete process.env.VERCEL;
+      if (origProjectId) process.env.VERCEL_PROJECT_ID = origProjectId;
+      else delete process.env.VERCEL_PROJECT_ID;
     }
   });
 });

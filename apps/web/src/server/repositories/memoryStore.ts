@@ -32,6 +32,9 @@ function getStoragePath(): string {
   if (process.env.NODE_ENV === 'test' || process.env.VITEST) {
     return path.join(os.tmpdir(), `updatepilot-test-storage-${process.pid}.json`);
   }
+  if (process.env.VERCEL) {
+    return path.join(os.tmpdir(), 'updatepilot-storage.json');
+  }
   const cwd = process.cwd();
   let root = cwd;
   // If cwd is apps/web, walk up to monorepo root

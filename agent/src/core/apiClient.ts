@@ -67,7 +67,9 @@ export class AgentApiClient {
       } catch {
         // Fallback to text status
       }
-      throw new Error(errMsg);
+      const err = new Error(errMsg) as Error & { statusCode?: number };
+      err.statusCode = res.status;
+      throw err;
     }
 
     const json = (await res.json()) as ApiResponse<T>;
@@ -80,7 +82,7 @@ export class AgentApiClient {
 
   async testConnectivity(): Promise<boolean> {
     try {
-      const res = await fetch(`${this.serverUrl}/api/v1/dashboard`, {
+      const res = await fetch(`${this.serverUrl}/api/v1/health`, {
         method: 'GET',
         headers: { Accept: 'application/json' },
       });

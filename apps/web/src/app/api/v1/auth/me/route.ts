@@ -2,6 +2,8 @@ import { NextRequest } from 'next/server';
 import { jsonSuccess, jsonError } from '@/server/apiResponse';
 import { SecurityAuth } from '@/server/security/auth';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   const user = SecurityAuth.getAuthenticatedUser(req);
 
@@ -11,4 +13,3 @@ export async function GET(req: NextRequest) {
 
   return jsonSuccess({ user });
 }
-

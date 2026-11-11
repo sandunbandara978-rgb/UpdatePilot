@@ -8,16 +8,18 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
   try {
     const user = SecurityAuth.getAuthenticatedUser(req);
-    const userId = user?.id || (process.env.NODE_ENV !== 'production' ? 'usr_default_admin' : null);
-
-    if (!userId) {
+    if (!user) {
       return jsonError('Authentication required to trigger host scan.', 'UNAUTHORIZED', 401);
     }
 
-    const result = await localScanService.scanLocalHost(userId);
+    const result = await localScanService.scanLocalHost(user.id);
     return jsonSuccess(result);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    return jsonError(msg, 'LOCAL_SCAN_ERROR', 500);
+    const code = (err as any)?.code === 'CLOUD_SERVER_NO_LOCAL_WINGET'
+      ? 'CLOUD_SERVER_NO_LOCAL_WINGET'
+      : 'LOCAL_SCAN_ERROR';
+    const status = code === 'CLOUD_SERVER_NO_LOCAL_WINGET' ? 422 : 500;
+    return jsonError(msg, code, status);
   }
 }

@@ -82,3 +82,19 @@ export const InventoryQuerySchema = z.object({
   sortBy: z.enum(['name', 'publisher', 'installedVersion', 'status', 'lastScannedAt']).default('name'),
   sortOrder: z.enum(['asc', 'desc']).default('asc'),
 });
+
+export const UserRegisterSchema = z.object({
+  email: z.string().email('Valid email address is required').max(200).trim().toLowerCase(),
+  name: z.string().min(2, 'Display name must be at least 2 characters').max(100).trim(),
+  password: z
+    .string()
+    .min(8, 'Password must be at least 8 characters')
+    .max(128, 'Password is too long'),
+});
+
+export const UserSettingsUpdateSchema = z.object({
+  theme: z.enum(['light', 'dark', 'system']).optional(),
+  scanIntervalHours: z.coerce.number().int().min(1).max(168).optional(),
+  autoCheckUpdates: z.boolean().optional(),
+  emailAlerts: z.boolean().optional(),
+});

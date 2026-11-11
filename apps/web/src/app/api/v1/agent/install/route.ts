@@ -6,8 +6,9 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    // Locate UpdatePilot-Client.ps1 in agent/ directory
     const candidates = [
+      path.resolve(process.cwd(), 'src', 'server', 'assets', 'UpdatePilot-Client.ps1'),
+      path.resolve(process.cwd(), 'apps', 'web', 'src', 'server', 'assets', 'UpdatePilot-Client.ps1'),
       path.resolve(process.cwd(), 'agent', 'UpdatePilot-Client.ps1'),
       path.resolve(process.cwd(), '..', 'agent', 'UpdatePilot-Client.ps1'),
       path.resolve(process.cwd(), '..', '..', 'agent', 'UpdatePilot-Client.ps1'),

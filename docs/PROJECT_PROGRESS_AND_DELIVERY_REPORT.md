@@ -61,8 +61,8 @@ UpdatePilot delivers turnkey deployment across any Windows computer:
 
 ### 1. Windows Desktop Agent Installer (`.exe`)
 - **File:** [`G:\UpdatePilot\dist\installer\UpdatePilot-Agent-Setup-1.0.0-x64.exe`](file:///G:/UpdatePilot/dist/installer/UpdatePilot-Agent-Setup-1.0.0-x64.exe)
-- **Size:** **26.29 MB** (27,562,016 bytes)
-- **SHA-256:** `3e920a1240ba36d1efa8fee798eb28a288a89912708e45567db1392b8cf70025`
+- **Size:** **26.28 MB** (27,559,334 bytes)
+- **SHA-256:** `33d6f8818beb172e48027e826dd23bb189039854a6a9fe2865c0f3a9a22d2e65`
 - **Installation Model:** Per-user (`%LOCALAPPDATA%\Programs\UpdatePilot-Agent`) — **Zero UAC elevation required**.
 - **Bundled Runtime:** Bundles a private Node.js x64 runtime (`node.exe` v26.4.0) — **no pre-existing Node.js required on client PCs**.
 - **Interactive Setup Wizard:** Graphical dialog (`Setup-Wizard.ps1`) to test connectivity and pair using a single-use code.

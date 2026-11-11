@@ -1,20 +1,30 @@
+import { NextRequest } from 'next/server';
 import { jsonSuccess, jsonError } from '@/server/apiResponse';
-import { securityRepo } from '@/server/repositories';
+import { securityService } from '@/server/services/securityService';
+import { SecurityAuth } from '@/server/security/auth';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const findings = await securityRepo.listAll();
-    return jsonSuccess({
-      findings,
-      lastCheckedAt: new Date().toISOString(),
-      source: 'OSV / National Vulnerability Database (NVD)',
-      disclaimer:
-        'Vulnerability intelligence is matched strictly against verified package identifiers and official public advisories. Unmatched software and local executables without upstream package mappings are excluded.',
+    const user = SecurityAuth.getAuthenticatedUser(req);
+    if (!user) {
+      return jsonError('Authentication required.', 'UNAUTHORIZED', 401);
+    }
+
+    const { searchParams } = new URL(req.url);
+    const forceRefresh = searchParams.get('refresh') === 'true';
+    const deviceId = searchParams.get('deviceId') || undefined;
+
+    const result = await securityService.getSecurityFindingsForUser(user.id, {
+      forceRefresh,
+      deviceId,
     });
+
+    return jsonSuccess(result);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    return jsonError(msg, 'SECURITY_FINDINGS_ERROR', 500);
+    const status = msg.startsWith('Forbidden') ? 403 : 500;
+    return jsonError(msg, 'SECURITY_FINDINGS_ERROR', status);
   }
 }

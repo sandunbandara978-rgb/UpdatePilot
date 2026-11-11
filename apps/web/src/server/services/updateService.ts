@@ -1,8 +1,16 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as os from 'os';
-import { applicationRepo, jobRepo, releaseMetadataRepo, auditRepo, deviceRepo } from '../repositories';
+import {
+  applicationRepo,
+  jobRepo,
+  releaseMetadataRepo,
+  auditRepo,
+  deviceRepo,
+  appHistoryRepo,
+} from '../repositories';
 import { getOrFetchReleaseMetadata } from './wingetMetadata';
+import { deviceService } from './deviceService';
 import {
   SAFE_PACKAGE_ID_REGEX,
   ApplicationEntity,
@@ -23,9 +31,25 @@ export interface UpdatePreviewResult {
 }
 
 export class UpdateService {
-  async getAvailableUpdates(deviceId?: string): Promise<ApplicationEntity[]> {
+  async getAvailableUpdates(deviceId?: string, userId?: string): Promise<ApplicationEntity[]> {
+    let deviceIds: string[] | undefined;
+
+    if (userId) {
+      const userDevices = await deviceRepo.listByUserId(userId);
+      const ownedIds = userDevices.map((d) => d.id);
+      if (deviceId && deviceId !== 'ALL') {
+        if (!ownedIds.includes(deviceId)) {
+          throw new Error('Forbidden: Access denied to device updates.');
+        }
+      } else {
+        deviceIds = ownedIds;
+        if (deviceIds.length === 0) return [];
+      }
+    }
+
     const res = await applicationRepo.list({
       deviceId: deviceId && deviceId !== 'ALL' ? deviceId : undefined,
+      deviceIds,
       status: 'UPDATE_AVAILABLE',
       page: 1,
       limit: 100,
@@ -35,10 +59,14 @@ export class UpdateService {
     return res.items;
   }
 
-  async previewUpdate(applicationId: string): Promise<UpdatePreviewResult> {
+  async previewUpdate(applicationId: string, userId?: string): Promise<UpdatePreviewResult> {
     const app = await applicationRepo.findById(applicationId);
     if (!app) {
       throw new Error(`Application with ID "${applicationId}" not found.`);
+    }
+
+    if (userId) {
+      await deviceService.assertDeviceOwnership(app.deviceId, userId);
     }
 
     if (!app.packageId || !SAFE_PACKAGE_ID_REGEX.test(app.packageId)) {
@@ -77,7 +105,7 @@ export class UpdateService {
     acknowledgedTargetVersion?: string;
     userId: string;
   }): Promise<UpdateJobEntity> {
-    const preview = await this.previewUpdate(params.applicationId);
+    const preview = await this.previewUpdate(params.applicationId, params.userId);
 
     if (
       params.acknowledgedTargetVersion &&
@@ -88,7 +116,6 @@ export class UpdateService {
       );
     }
 
-    // Create persistent UpdateJob
     const job = await jobRepo.createUpdateJob({
       deviceId: preview.application.deviceId,
       applicationId: preview.application.id,
@@ -106,11 +133,12 @@ export class UpdateService {
       metadata: { jobId: job.id, targetVersion: preview.targetVersion },
     });
 
-    // Trigger local execution ONLY if running locally without active background agent
+    // Trigger local execution ONLY if this is an embedded local host without an external daemon agent
     this.triggerAsyncLocalExecution(
       job.id,
       preview.application.id,
       preview.application.packageId!,
+      preview.application.installedVersion,
       preview.targetVersion,
       preview.application.deviceId
     );
@@ -118,9 +146,6 @@ export class UpdateService {
     return job;
   }
 
-  /**
-   * Executes updates for an explicit, reviewed package list with confirmed target versions.
-   */
   async executeBatchUpdates(params: {
     applicationIds?: string[];
     items?: Array<{ applicationId: string; targetVersion: string }>;
@@ -159,7 +184,7 @@ export class UpdateService {
         }
       }
     } else if (params.deviceId) {
-      const apps = await this.getAvailableUpdates(params.deviceId);
+      const apps = await this.getAvailableUpdates(params.deviceId, params.userId);
       for (const a of apps) {
         if (a.status === 'UPDATE_AVAILABLE' && a.availableVersion) {
           try {
@@ -179,59 +204,44 @@ export class UpdateService {
     return { jobs: createdJobs, count: createdJobs.length };
   }
 
-  /**
-   * Directly executes WinGet upgrade in background on the host system
-   * and verifies installed version change.
-   *
-   * Safety Rules:
-   * 1. Disabled if DISABLE_LOCAL_RUNNER is set or if remote background agent is active.
-   * 2. Only executes if target device explicitly matches this local host machine.
-   * 3. Binds strictly to approved targetVersion via `--version <targetVersion>`.
-   * 4. Independently rescans post-install version.
-   * 5. NEVER marks UP_TO_DATE or COMPLETED without version proof matching targetVersion.
-   * 6. Atomically claims job before starting execution; stops immediately if claim returns false.
-   */
   private triggerAsyncLocalExecution(
     jobId: string,
     applicationId: string,
     packageId: string,
+    previousVersion: string,
     targetVersion: string,
     deviceId: string
   ): void {
     if (process.platform !== 'win32' || process.env.DISABLE_LOCAL_RUNNER === 'true') return;
 
-    // Small delay to allow remote agent polling to claim if preferred
     setTimeout(async () => {
       try {
         const currentJob = await jobRepo.findUpdateJobById(jobId);
-        // If already claimed or running by background agent, don't double execute
         if (!currentJob || currentJob.status !== 'QUEUED') {
           return;
         }
 
-        // Verify that this host is actually the target device
         const device = await deviceRepo.findById(deviceId);
         if (device) {
-          // If the device is managed by an active background agent, let the agent handle it
-          if (device.status === 'ONLINE' && device.agentVersion) {
+          // If an external daemon agent is managing this host (not the embedded local scan engine),
+          // leave the job queued so the external agent polls and executes it.
+          const isEmbeddedLocalEngine = Boolean(device.agentVersion?.includes('Local Engine'));
+          if (device.status === 'ONLINE' && device.agentVersion && !isEmbeddedLocalEngine) {
             return;
           }
 
           const localHostName = os.hostname().toLowerCase();
           const targetHostName = device.deviceName.toLowerCase();
-          if (targetHostName !== localHostName) {
-            // Target is a different device; leave job for that device's agent to claim
+          if (targetHostName !== localHostName && !targetHostName.startsWith(`${localHostName} (`)) {
             return;
           }
         }
 
-        // Atomically claim the job passing the deviceId
         const claimed = await jobRepo.claimJob(jobId, 'UPDATE', deviceId);
         if (!claimed) {
           return;
         }
 
-        // Mark RUNNING
         await jobRepo.updateUpdateJob(jobId, {
           status: 'RUNNING',
           startedAt: new Date().toISOString(),
@@ -271,7 +281,6 @@ export class UpdateService {
         }
 
         if (exitCode === 0 || restartRequired) {
-          // Verification step
           await jobRepo.updateUpdateJob(jobId, {
             status: restartRequired ? 'RESTART_REQUIRED' : 'VERIFYING',
             exitCode,
@@ -301,14 +310,18 @@ export class UpdateService {
             console.warn('Failed to rescan package after upgrade:', inspectErr);
           }
 
-          // Compare actual installed version with targetVersion using strict comparator
           const comparison = actualInstalledVersion ? compareVersions(actualInstalledVersion, targetVersion) : null;
 
           if (comparison === 0 && actualInstalledVersion) {
-            // Update application status in repository
             await applicationRepo.updateStatus(applicationId, 'UP_TO_DATE', actualInstalledVersion, null);
 
-            // Mark job COMPLETED
+            await appHistoryRepo.record({
+              applicationId,
+              previousVersion,
+              newVersion: actualInstalledVersion,
+              triggerType: 'LOCAL_UPDATE',
+            });
+
             await jobRepo.updateUpdateJob(jobId, {
               status: restartRequired ? 'RESTART_REQUIRED' : 'COMPLETED',
               completedAt: new Date().toISOString(),
@@ -325,7 +338,6 @@ export class UpdateService {
               metadata: { version: actualInstalledVersion, exitCode },
             });
           } else {
-            // VERIFICATION FAILED: Do NOT substitute targetVersion! Do NOT mark UP_TO_DATE!
             const failureDetail = !actualInstalledVersion
               ? `Verification failed: Package "${packageId}" was not found in installed inventory after upgrade.`
               : `Verification failed: Detected installed version (${actualInstalledVersion}) does not match expected target version (${targetVersion}).`;
@@ -347,7 +359,6 @@ export class UpdateService {
             });
           }
         } else {
-          // Execution failed
           await jobRepo.updateUpdateJob(jobId, {
             status: 'FAILED',
             completedAt: new Date().toISOString(),

@@ -310,7 +310,7 @@ $form.Controls.Add($btnClose)
 $btnTest.Add_Click({
     $txtLog.Text = "Testing connection to " + $txtServer.Text + "..."
     try {
-        $res = Invoke-WebRequest -Uri ($txtServer.Text.TrimEnd('/') + '/api/v1/dashboard') -TimeoutSec 5 -UseBasicParsing
+        $res = Invoke-WebRequest -Uri ($txtServer.Text.TrimEnd('/') + '/api/v1/health') -TimeoutSec 5 -UseBasicParsing
         if ($res.StatusCode -eq 200) {
             $txtLog.Text = "SUCCESS: Server is online and responsive (HTTP 200)."
         } else {

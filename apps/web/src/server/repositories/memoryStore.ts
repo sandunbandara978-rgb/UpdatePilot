@@ -11,6 +11,9 @@ import {
   SecurityFindingEntity,
   ApplicationStatus,
   JobStatus,
+  UserEntity,
+  UserSettingsEntity,
+  ApplicationHistoryEntity,
 } from '@updatepilot/shared';
 import {
   IDeviceRepository,
@@ -19,6 +22,9 @@ import {
   IAuditRepository,
   IReleaseMetadataRepository,
   ISecurityRepository,
+  IUserRepository,
+  ISettingsRepository,
+  IApplicationHistoryRepository,
 } from './types';
 import { SecurityAuth } from '../security/auth';
 
@@ -39,9 +45,12 @@ function getStoragePath(): string {
 }
 
 export class MemoryStore {
+  users: Map<string, UserEntity> = new Map();
+  userSettings: Map<string, UserSettingsEntity> = new Map();
   devices: Map<string, DeviceEntity> = new Map();
   credentials: Map<string, { deviceId: string; tokenHash: string; salt: string; isRevoked: boolean }> = new Map();
   applications: Map<string, ApplicationEntity> = new Map();
+  applicationHistory: ApplicationHistoryEntity[] = [];
   scanJobs: Map<string, ScanJobEntity> = new Map();
   updateJobs: Map<string, UpdateJobEntity> = new Map();
   auditEvents: AuditEventEntity[] = [];
@@ -60,9 +69,12 @@ export class MemoryStore {
         fs.mkdirSync(dir, { recursive: true });
       }
       const serialized = {
+        users: Array.from(this.users.entries()),
+        userSettings: Array.from(this.userSettings.entries()),
         devices: Array.from(this.devices.entries()),
         credentials: Array.from(this.credentials.entries()),
         applications: Array.from(this.applications.entries()),
+        applicationHistory: this.applicationHistory,
         scanJobs: Array.from(this.scanJobs.entries()),
         updateJobs: Array.from(this.updateJobs.entries()),
         auditEvents: this.auditEvents,
@@ -81,14 +93,22 @@ export class MemoryStore {
       if (fs.existsSync(storageFile)) {
         const raw = fs.readFileSync(storageFile, 'utf-8');
         const data = JSON.parse(raw);
+        if (data.users) this.users = new Map(data.users);
+        if (data.userSettings) this.userSettings = new Map(data.userSettings);
         if (data.devices) this.devices = new Map(data.devices);
         if (data.credentials) this.credentials = new Map(data.credentials);
         if (data.applications) this.applications = new Map(data.applications);
+        if (data.applicationHistory) this.applicationHistory = data.applicationHistory;
         if (data.scanJobs) this.scanJobs = new Map(data.scanJobs);
         if (data.updateJobs) this.updateJobs = new Map(data.updateJobs);
         if (data.auditEvents) this.auditEvents = data.auditEvents;
         if (data.metadata) this.metadata = new Map(data.metadata);
         if (data.securityFindings) this.securityFindings = data.securityFindings;
+
+        if (this.users.size === 0) {
+          this.seedDefaultUser();
+          this.saveToDisk();
+        }
         return;
       }
     } catch (err) {
@@ -102,7 +122,6 @@ export class MemoryStore {
     let targetDeviceId = keepDeviceId;
     if (!targetDeviceId) {
       const localHostName = os.hostname().toLowerCase();
-      // Find non-fixture device matching current host, or most recently active device
       for (const dev of Array.from(this.devices.values())) {
         if (dev.id !== 'dev_win11_workstation_fixture' && dev.deviceName.toLowerCase().includes(localHostName)) {
           targetDeviceId = dev.id;
@@ -163,8 +182,44 @@ export class MemoryStore {
   }
 
   clearDemoFixture(): boolean {
-    const res = this.purgeAllMockAndDemoDevices();
-    return res.removedDevices > 0 || res.removedApps > 0;
+    const fixtureId = 'dev_win11_workstation_fixture';
+    let removed = false;
+
+    if (this.devices.has(fixtureId)) {
+      this.devices.delete(fixtureId);
+      removed = true;
+    }
+
+    for (const [id, app] of Array.from(this.applications.entries())) {
+      if (app.deviceId === fixtureId) {
+        this.applications.delete(id);
+        removed = true;
+      }
+    }
+
+    for (const [id, job] of Array.from(this.updateJobs.entries())) {
+      if (job.deviceId === fixtureId) {
+        this.updateJobs.delete(id);
+      }
+    }
+
+    for (const [id, scan] of Array.from(this.scanJobs.entries())) {
+      if (scan.deviceId === fixtureId) {
+        this.scanJobs.delete(id);
+      }
+    }
+
+    for (const [token, cred] of Array.from(this.credentials.entries())) {
+      if (cred.deviceId === fixtureId) {
+        this.credentials.delete(token);
+      }
+    }
+
+    this.auditEvents = this.auditEvents.filter((e) => e.deviceId !== fixtureId);
+    if (removed) {
+      this.saveToDisk();
+    }
+    return removed;
   }
 
   restoreDemoFixture(): void {
@@ -183,7 +238,33 @@ export class MemoryStore {
     this.saveToDisk();
   }
 
+  private seedDefaultUser(): void {
+    if (!this.users.has('usr_default_admin')) {
+      const initialPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'Password123!';
+      this.users.set('usr_default_admin', {
+        id: 'usr_default_admin',
+        email: 'admin@updatepilot.local',
+        name: 'Local Administrator',
+        role: 'ADMIN',
+        passwordHash: SecurityAuth.hashPassword(initialPassword),
+        createdAt: new Date().toISOString(),
+      });
+    }
+    if (!this.userSettings.has('usr_default_admin')) {
+      this.userSettings.set('usr_default_admin', {
+        userId: 'usr_default_admin',
+        theme: 'system',
+        scanIntervalHours: 12,
+        autoCheckUpdates: true,
+        emailAlerts: false,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  }
+
   private seedDefaults(): void {
+    this.seedDefaultUser();
+
     const hostname = os.hostname();
     const osVersion = `${os.type()} ${os.release()} (${os.arch()})`;
     const hostDeviceId = `dev_${hostname.toLowerCase().replace(/[^a-z0-9_]/g, '_')}`;
@@ -204,6 +285,101 @@ export class MemoryStore {
 
 export const memoryStore = new MemoryStore();
 
+export class MemoryUserRepository implements IUserRepository {
+  async findById(id: string): Promise<UserEntity | null> {
+    return memoryStore.users.get(id) || null;
+  }
+
+  async findByEmail(email: string): Promise<UserEntity | null> {
+    const target = email.toLowerCase().trim();
+    for (const u of Array.from(memoryStore.users.values())) {
+      if (u.email.toLowerCase() === target) {
+        return u;
+      }
+    }
+    return null;
+  }
+
+  async create(data: { id?: string; email: string; name: string; passwordHash: string; role?: UserEntity['role'] }): Promise<UserEntity> {
+    const id = data.id || `usr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const user: UserEntity = {
+      id,
+      email: data.email.toLowerCase().trim(),
+      name: data.name.trim(),
+      role: data.role || 'USER',
+      passwordHash: data.passwordHash,
+      createdAt: new Date().toISOString(),
+    };
+    memoryStore.users.set(id, user);
+    memoryStore.saveToDisk();
+    return user;
+  }
+
+  async count(): Promise<number> {
+    return memoryStore.users.size;
+  }
+}
+
+export class MemorySettingsRepository implements ISettingsRepository {
+  async getByUserId(userId: string): Promise<UserSettingsEntity> {
+    const existing = memoryStore.userSettings.get(userId);
+    if (existing) return existing;
+
+    const defaults: UserSettingsEntity = {
+      userId,
+      theme: 'system',
+      scanIntervalHours: 12,
+      autoCheckUpdates: true,
+      emailAlerts: false,
+      updatedAt: new Date().toISOString(),
+    };
+    memoryStore.userSettings.set(userId, defaults);
+    memoryStore.saveToDisk();
+    return defaults;
+  }
+
+  async upsert(
+    userId: string,
+    data: Partial<Omit<UserSettingsEntity, 'userId' | 'updatedAt'>>
+  ): Promise<UserSettingsEntity> {
+    const current = await this.getByUserId(userId);
+    const updated: UserSettingsEntity = {
+      ...current,
+      ...data,
+      userId,
+      updatedAt: new Date().toISOString(),
+    };
+    memoryStore.userSettings.set(userId, updated);
+    memoryStore.saveToDisk();
+    return updated;
+  }
+}
+
+export class MemoryApplicationHistoryRepository implements IApplicationHistoryRepository {
+  async record(data: {
+    applicationId: string;
+    previousVersion: string;
+    newVersion: string;
+    triggerType?: string;
+  }): Promise<ApplicationHistoryEntity> {
+    const entry: ApplicationHistoryEntity = {
+      id: `aph_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      applicationId: data.applicationId,
+      previousVersion: data.previousVersion,
+      newVersion: data.newVersion,
+      triggerType: data.triggerType || 'UPDATE',
+      changedAt: new Date().toISOString(),
+    };
+    memoryStore.applicationHistory.unshift(entry);
+    memoryStore.saveToDisk();
+    return entry;
+  }
+
+  async listByApplicationId(applicationId: string): Promise<ApplicationHistoryEntity[]> {
+    return memoryStore.applicationHistory.filter((h) => h.applicationId === applicationId);
+  }
+}
+
 export class MemoryDeviceRepository implements IDeviceRepository {
   async findById(id: string): Promise<DeviceEntity | null> {
     return memoryStore.devices.get(id) || null;
@@ -221,8 +397,8 @@ export class MemoryDeviceRepository implements IDeviceRepository {
     return null;
   }
 
-  async listByUserId(_userId: string): Promise<DeviceEntity[]> {
-    return Array.from(memoryStore.devices.values());
+  async listByUserId(userId: string): Promise<DeviceEntity[]> {
+    return Array.from(memoryStore.devices.values()).filter((d) => d.userId === userId);
   }
 
   async create(data: Omit<DeviceEntity, 'id' | 'createdAt'>): Promise<DeviceEntity> {
@@ -311,6 +487,7 @@ export class MemoryApplicationRepository implements IApplicationRepository {
 
   async list(params: {
     deviceId?: string;
+    deviceIds?: string[];
     search?: string;
     status?: ApplicationStatus | 'ALL';
     page: number;
@@ -322,6 +499,9 @@ export class MemoryApplicationRepository implements IApplicationRepository {
 
     if (params.deviceId) {
       all = all.filter((a) => a.deviceId === params.deviceId);
+    } else if (params.deviceIds) {
+      const allowed = new Set(params.deviceIds);
+      all = all.filter((a) => allowed.has(a.deviceId));
     }
 
     if (params.status && params.status !== 'ALL') {
@@ -338,7 +518,6 @@ export class MemoryApplicationRepository implements IApplicationRepository {
       );
     }
 
-    // Sort
     all.sort((a, b) => {
       const fieldA = (a[params.sortBy as keyof ApplicationEntity] || '').toString().toLowerCase();
       const fieldB = (b[params.sortBy as keyof ApplicationEntity] || '').toString().toLowerCase();
@@ -367,7 +546,6 @@ export class MemoryApplicationRepository implements IApplicationRepository {
       status: ApplicationStatus;
     }>
   ): Promise<number> {
-    // If saving apps for a real device, clean out the fixture to prevent confusion
     if (deviceId !== 'dev_win11_workstation_fixture' && memoryStore.devices.has('dev_win11_workstation_fixture')) {
       memoryStore.clearDemoFixture();
     }
@@ -458,7 +636,7 @@ export class MemoryJobRepository implements IJobRepository {
     currentVersion: string;
     targetVersion: string;
   }): Promise<UpdateJobEntity> {
-    const id = `job_upd_${Date.now()}`;
+    const id = `job_upd_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
     const job: UpdateJobEntity = {
       id,
       ...data,
@@ -472,7 +650,6 @@ export class MemoryJobRepository implements IJobRepository {
   }
 
   async pollPendingJob(deviceId: string): Promise<{ id: string; type: 'SCAN' | 'UPDATE'; payload: any } | null> {
-    // Check update jobs first
     for (const job of Array.from(memoryStore.updateJobs.values())) {
       if (job.deviceId === deviceId && job.status === 'QUEUED') {
         return {
@@ -488,7 +665,6 @@ export class MemoryJobRepository implements IJobRepository {
       }
     }
 
-    // Then check scan jobs
     for (const job of Array.from(memoryStore.scanJobs.values())) {
       if (job.deviceId === deviceId && job.status === 'QUEUED') {
         return {
@@ -545,14 +721,19 @@ export class MemoryJobRepository implements IJobRepository {
     }
   }
 
-  async listRecentJobs(limit: number): Promise<Array<{ id: string; type: 'SCAN' | 'UPDATE'; title: string; status: JobStatus; timestamp: string; details?: string }>> {
+  async listRecentJobs(
+    limit: number,
+    deviceIds?: string[]
+  ): Promise<Array<{ id: string; type: 'SCAN' | 'UPDATE'; title: string; status: JobStatus; timestamp: string; details?: string }>> {
+    const allowed = deviceIds ? new Set(deviceIds) : null;
     const list: Array<{ id: string; type: 'SCAN' | 'UPDATE'; title: string; status: JobStatus; timestamp: string; details?: string }> = [];
 
     for (const u of memoryStore.updateJobs.values()) {
+      if (allowed && !allowed.has(u.deviceId)) continue;
       list.push({
         id: u.id,
         type: 'UPDATE',
-        title: `Update ${u.packageId} (${u.currentVersion} â†’ ${u.targetVersion})`,
+        title: `Update ${u.packageId} (${u.currentVersion} -> ${u.targetVersion})`,
         status: u.status,
         timestamp: u.createdAt,
         details: u.verificationDetails || u.executionOutput || undefined,
@@ -560,6 +741,7 @@ export class MemoryJobRepository implements IJobRepository {
     }
 
     for (const s of memoryStore.scanJobs.values()) {
+      if (allowed && !allowed.has(s.deviceId)) continue;
       list.push({
         id: s.id,
         type: 'SCAN',
@@ -574,10 +756,15 @@ export class MemoryJobRepository implements IJobRepository {
     return list.slice(0, limit);
   }
 
-  async listUpdateHistory(page: number, limit: number): Promise<{ items: UpdateJobEntity[]; total: number }> {
-    const all = Array.from(memoryStore.updateJobs.values()).sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
+  async listUpdateHistory(
+    page: number,
+    limit: number,
+    deviceIds?: string[]
+  ): Promise<{ items: UpdateJobEntity[]; total: number }> {
+    const allowed = deviceIds ? new Set(deviceIds) : null;
+    const all = Array.from(memoryStore.updateJobs.values())
+      .filter((u) => !allowed || allowed.has(u.deviceId))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     const total = all.length;
     const start = (page - 1) * limit;
     return { items: all.slice(start, start + limit), total };
@@ -595,8 +782,12 @@ export class MemoryAuditRepository implements IAuditRepository {
     memoryStore.saveToDisk();
   }
 
-  async list(limit: number): Promise<AuditEventEntity[]> {
-    return memoryStore.auditEvents.slice(0, limit);
+  async list(limit: number, deviceIds?: string[]): Promise<AuditEventEntity[]> {
+    const allowed = deviceIds ? new Set(deviceIds) : null;
+    const filtered = allowed
+      ? memoryStore.auditEvents.filter((e) => e.deviceId && allowed.has(e.deviceId))
+      : memoryStore.auditEvents;
+    return filtered.slice(0, limit);
   }
 }
 
@@ -616,7 +807,26 @@ export class MemorySecurityRepository implements ISecurityRepository {
     return memoryStore.securityFindings.filter((f) => f.packageId.toLowerCase() === packageId.toLowerCase());
   }
 
+  async listForPackageIds(packageIds: string[]): Promise<SecurityFindingEntity[]> {
+    const allowed = new Set(packageIds.map((p) => p.toLowerCase()));
+    return memoryStore.securityFindings.filter((f) => allowed.has(f.packageId.toLowerCase()));
+  }
+
   async listAll(): Promise<SecurityFindingEntity[]> {
     return memoryStore.securityFindings;
+  }
+
+  async replaceForPackages(packageIds: string[], findings: Array<Omit<SecurityFindingEntity, 'id'>>): Promise<void> {
+    const targetSet = new Set(packageIds.map((p) => p.toLowerCase()));
+    memoryStore.securityFindings = memoryStore.securityFindings.filter(
+      (f) => !targetSet.has(f.packageId.toLowerCase())
+    );
+    for (const f of findings) {
+      memoryStore.securityFindings.push({
+        ...f,
+        id: `sec_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      });
+    }
+    memoryStore.saveToDisk();
   }
 }

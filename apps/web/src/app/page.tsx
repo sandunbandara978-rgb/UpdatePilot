@@ -56,20 +56,33 @@ export default function DashboardOverviewPage() {
   }, [selectedDeviceId]);
 
   /**
-   * Runs a real-time WinGet dual-scan (winget list + winget upgrade) and
-   * refreshes all dashboard metrics.  Used both on first mount (silent=true)
-   * and by the manual "Run Discovery" button (silent=false).
+   * Runs a real-time WinGet dual-scan (winget list + winget upgrade) when running
+   * locally on Windows, and refreshes dashboard metrics. On cloud/Linux deployments
+   * (e.g. Vercel), detects `supportsLocalWinGet === false` via /api/v1/health so it
+   * does not trigger a failing local scan on mount.
    */
   const runLiveScan = useCallback(async (silent = false) => {
     if (!silent) setIsScanning(true);
     if (!silent) setScanMessage(null);
     try {
+      if (silent) {
+        const healthRes = await fetch('/api/v1/health');
+        const healthData = await healthRes.json();
+        if (healthData.success && healthData.data?.supportsLocalWinGet === false) {
+          await refreshDevices();
+          await fetchDashboardData();
+          return;
+        }
+      }
+
       const res = await fetch('/api/v1/system/scan-local', { method: 'POST' });
       const data = await res.json();
       if (data.success && !silent) {
         setScanMessage(
           `Discovered ${data.data.appsSaved} applications (${data.data.updatesCount} updates pending) on ${data.data.deviceName}.`
         );
+      } else if (!data.success && !silent) {
+        setScanMessage(data.error?.message || 'Host scan could not be completed.');
       }
       await refreshDevices();
       await fetchDashboardData();

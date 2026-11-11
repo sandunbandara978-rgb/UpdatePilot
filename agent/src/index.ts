@@ -203,9 +203,23 @@ program
     }
 
     // 2. Continuous Outbound Polling Loop
-    const pollInterval = 15000; // 15 seconds
+    const pollInterval = parseInt(process.env.AGENT_POLL_INTERVAL_MS || '10000', 10) || 10000;
     const heartbeatInterval = 30000; // 30 seconds
+    const rescanHours = parseFloat(process.env.AGENT_RESCAN_INTERVAL_HOURS || '6') || 6;
+    const rescanInterval = rescanHours * 60 * 60 * 1000;
     let lastHeartbeat = Date.now();
+    let lastScheduledScan = Date.now();
+
+    const isRevokedError = (err: unknown): boolean => {
+      if (!err || typeof err !== 'object') return false;
+      const e = err as { statusCode?: number; message?: string };
+      const msg = (e.message || '').toLowerCase();
+      return (
+        e.statusCode === 401 ||
+        msg.includes('token invalid or revoked') ||
+        msg.includes('unauthorized')
+      );
+    };
 
     const loop = async () => {
       if (isShuttingDown) return;
@@ -214,6 +228,14 @@ program
         if (Date.now() - lastHeartbeat >= heartbeatInterval) {
           await client.sendHeartbeat();
           lastHeartbeat = Date.now();
+        }
+
+        if (Date.now() - lastScheduledScan >= rescanInterval) {
+          console.log(`[UpdatePilot Agent] Running scheduled periodic software scan...`);
+          const apps = await discovery.runDiscovery();
+          await client.submitScan(`scheduled_scan_${Date.now()}`, apps);
+          lastScheduledScan = Date.now();
+          console.log(`[UpdatePilot Agent] Scheduled scan submitted (${apps.length} apps).`);
         }
 
         const pollRes = await client.pollJobs();
@@ -298,6 +320,14 @@ program
           }
         }
       } catch (err) {
+        if (isRevokedError(err)) {
+          console.error(
+            `\x1b[31m[UpdatePilot Agent] Credentials revoked or rejected by server. Clearing local vault and stopping worker.\x1b[0m`
+          );
+          credStore.clearCredentials();
+          cleanupLock();
+          process.exit(0);
+        }
         console.warn(`[UpdatePilot Agent] Polling cycle error:`, err instanceof Error ? err.message : String(err));
       }
 

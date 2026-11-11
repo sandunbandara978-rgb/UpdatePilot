@@ -11,8 +11,7 @@ export async function POST(
 ) {
   try {
     const user = SecurityAuth.getAuthenticatedUser(req);
-    const userId = user?.id || (process.env.NODE_ENV !== 'production' ? 'usr_default_admin' : null);
-    if (!userId) {
+    if (!user) {
       return jsonError('Authentication required to trigger scan.', 'UNAUTHORIZED', 401);
     }
 
@@ -22,14 +21,14 @@ export async function POST(
       return jsonError('Device not found', 'NOT_FOUND', 404);
     }
 
-    if (device.userId !== userId && userId !== 'usr_default_admin') {
+    if (device.userId !== user.id) {
       return jsonError('Forbidden: Access denied to device resources.', 'FORBIDDEN', 403);
     }
 
     const job = await jobRepo.createScanJob(deviceId);
 
     await auditRepo.record({
-      userId,
+      userId: user.id,
       deviceId,
       eventType: 'SCAN_INITIATED',
       action: 'Triggered on-demand inventory scan',

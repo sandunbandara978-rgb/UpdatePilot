@@ -8,7 +8,32 @@ import {
   SecurityFindingEntity,
   ApplicationStatus,
   JobStatus,
+  UserEntity,
+  UserSettingsEntity,
+  ApplicationHistoryEntity,
 } from '@updatepilot/shared';
+
+export interface IUserRepository {
+  findById(id: string): Promise<UserEntity | null>;
+  findByEmail(email: string): Promise<UserEntity | null>;
+  create(data: { id?: string; email: string; name: string; passwordHash: string; role?: UserEntity['role'] }): Promise<UserEntity>;
+  count(): Promise<number>;
+}
+
+export interface ISettingsRepository {
+  getByUserId(userId: string): Promise<UserSettingsEntity>;
+  upsert(userId: string, data: Partial<Omit<UserSettingsEntity, 'userId' | 'updatedAt'>>): Promise<UserSettingsEntity>;
+}
+
+export interface IApplicationHistoryRepository {
+  record(data: {
+    applicationId: string;
+    previousVersion: string;
+    newVersion: string;
+    triggerType?: string;
+  }): Promise<ApplicationHistoryEntity>;
+  listByApplicationId(applicationId: string): Promise<ApplicationHistoryEntity[]>;
+}
 
 export interface IDeviceRepository {
   findById(id: string): Promise<DeviceEntity | null>;
@@ -28,6 +53,7 @@ export interface IApplicationRepository {
   findByPackageId(deviceId: string, packageId: string): Promise<ApplicationEntity | null>;
   list(params: {
     deviceId?: string;
+    deviceIds?: string[];
     search?: string;
     status?: ApplicationStatus | 'ALL';
     page: number;
@@ -65,13 +91,20 @@ export interface IJobRepository {
   claimJob(id: string, type: 'SCAN' | 'UPDATE', deviceId?: string): Promise<boolean>;
   updateScanJob(id: string, data: Partial<ScanJobEntity>): Promise<void>;
   updateUpdateJob(id: string, data: Partial<UpdateJobEntity>): Promise<void>;
-  listRecentJobs(limit: number): Promise<Array<{ id: string; type: 'SCAN' | 'UPDATE'; title: string; status: JobStatus; timestamp: string; details?: string }>>;
-  listUpdateHistory(page: number, limit: number): Promise<{ items: UpdateJobEntity[]; total: number }>;
+  listRecentJobs(
+    limit: number,
+    deviceIds?: string[]
+  ): Promise<Array<{ id: string; type: 'SCAN' | 'UPDATE'; title: string; status: JobStatus; timestamp: string; details?: string }>>;
+  listUpdateHistory(
+    page: number,
+    limit: number,
+    deviceIds?: string[]
+  ): Promise<{ items: UpdateJobEntity[]; total: number }>;
 }
 
 export interface IAuditRepository {
   record(event: Omit<AuditEventEntity, 'id' | 'createdAt'>): Promise<void>;
-  list(limit: number): Promise<AuditEventEntity[]>;
+  list(limit: number, deviceIds?: string[]): Promise<AuditEventEntity[]>;
 }
 
 export interface IReleaseMetadataRepository {
@@ -81,5 +114,7 @@ export interface IReleaseMetadataRepository {
 
 export interface ISecurityRepository {
   listByPackageId(packageId: string): Promise<SecurityFindingEntity[]>;
+  listForPackageIds(packageIds: string[]): Promise<SecurityFindingEntity[]>;
   listAll(): Promise<SecurityFindingEntity[]>;
+  replaceForPackages(packageIds: string[], findings: Array<Omit<SecurityFindingEntity, 'id'>>): Promise<void>;
 }

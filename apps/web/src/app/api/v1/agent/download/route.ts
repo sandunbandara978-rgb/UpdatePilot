@@ -11,6 +11,8 @@ export async function GET(req: NextRequest) {
 
     if (format === 'ps1') {
       const psCandidates = [
+        path.resolve(process.cwd(), 'src', 'server', 'assets', 'UpdatePilot-Client.ps1'),
+        path.resolve(process.cwd(), 'apps', 'web', 'src', 'server', 'assets', 'UpdatePilot-Client.ps1'),
         path.resolve(process.cwd(), 'agent', 'UpdatePilot-Client.ps1'),
         path.resolve(process.cwd(), '..', 'agent', 'UpdatePilot-Client.ps1'),
         path.resolve(process.cwd(), '..', '..', 'agent', 'UpdatePilot-Client.ps1'),
@@ -31,7 +33,12 @@ export async function GET(req: NextRequest) {
       return new NextResponse('# Error: Client script not found on server.', { status: 404 });
     }
 
-    // Default: serve the compiled Windows Installer executable
+    // Check external release asset URL first when configured for serverless cloud hosting
+    if (process.env.INSTALLER_DOWNLOAD_URL) {
+      return NextResponse.redirect(process.env.INSTALLER_DOWNLOAD_URL, 302);
+    }
+
+    // Serve locally compiled Windows Installer executable
     const exeCandidates = [
       path.resolve(process.cwd(), 'dist', 'installer', 'UpdatePilot-Agent-Setup-1.0.0-x64.exe'),
       path.resolve(process.cwd(), '..', 'dist', 'installer', 'UpdatePilot-Agent-Setup-1.0.0-x64.exe'),
@@ -53,7 +60,17 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    return new NextResponse('Error: Installer binary not found on server.', { status: 404 });
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: 'INSTALLER_NOT_BUNDLED_ON_CLOUD',
+          message:
+            'The standalone .exe installer is not bundled inside this serverless deployment. Set INSTALLER_DOWNLOAD_URL to your GitHub Release asset URL, or use the PowerShell client script at /api/v1/agent/install.',
+        },
+      },
+      { status: 404 }
+    );
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return new NextResponse(`Error: ${msg}`, { status: 500 });

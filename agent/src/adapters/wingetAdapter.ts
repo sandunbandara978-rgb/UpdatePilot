@@ -79,31 +79,36 @@ export class WinGetAdapter {
       const installed = this.parseListOutput(listStdout);
       const upgradable = this.parseListOutput(upgradeStdout);
 
-      // Authoritative upgrade lookup map: packageId -> availableVersion
-      const upgradeMap = new Map<string, string>();
-      for (const row of upgradable) {
-        if (row.packageId && row.availableVersion) {
-          upgradeMap.set(row.packageId.toLowerCase(), row.availableVersion);
-        }
-      }
-
-      // Merge real available versions from winget upgrade into installed apps
-      return installed.map((app) => {
-        if (app.packageId) {
-          const upgradeAvailable = upgradeMap.get(app.packageId.toLowerCase());
-          if (upgradeAvailable) {
-            return {
-              ...app,
-              availableVersion: upgradeAvailable,
-            };
-          }
-        }
-        return app;
-      });
+      return this.mergeInstalledAndUpgradable(installed, upgradable);
     } catch (err: unknown) {
       console.error('Error executing winget discovery:', err);
       throw new Error(`Failed to list applications via WinGet: ${err instanceof Error ? err.message : String(err)}`);
     }
+  }
+
+  /**
+   * Merges installed WinGet inventory with authoritative `winget upgrade` output.
+   */
+  mergeInstalledAndUpgradable(installed: WinGetApp[], upgradable: WinGetApp[]): WinGetApp[] {
+    const upgradeMap = new Map<string, string>();
+    for (const row of upgradable) {
+      if (row.packageId && row.availableVersion) {
+        upgradeMap.set(row.packageId.toLowerCase(), row.availableVersion);
+      }
+    }
+
+    return installed.map((app) => {
+      if (app.packageId) {
+        const upgradeAvailable = upgradeMap.get(app.packageId.toLowerCase());
+        if (upgradeAvailable) {
+          return {
+            ...app,
+            availableVersion: upgradeAvailable,
+          };
+        }
+      }
+      return app;
+    });
   }
 
   /**

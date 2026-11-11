@@ -7,11 +7,22 @@ export class DeviceService {
     return deviceRepo.listByUserId(userId);
   }
 
+  async assertDeviceOwnership(deviceId: string, userId: string): Promise<DeviceEntity> {
+    const device = await deviceRepo.findById(deviceId);
+    if (!device) {
+      throw new Error('Device not found');
+    }
+    if (device.userId !== userId) {
+      throw new Error('Forbidden: Access denied to device resources.');
+    }
+    return device;
+  }
+
   async generatePairingCode(userId: string): Promise<{ pairingCode: string; expiresAt: string }> {
     const code = SecurityAuth.generatePairingCode();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const ttlMinutes = parseInt(process.env.PAIRING_CODE_TTL_MINUTES || '10', 10) || 10;
+    const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
 
-    // Create an unverified device placeholder or assign to user
     const pendingDevice = await deviceRepo.create({
       userId,
       deviceName: 'Pending Pairing...',
@@ -47,13 +58,9 @@ export class DeviceService {
       throw new Error('Invalid or expired pairing code.');
     }
 
-    // Generate cryptographic token
     const { token, hash, salt } = SecurityAuth.generateAgentToken();
-
-    // Store salted hash
     await deviceRepo.createCredential(device.id, hash, salt);
 
-    // Update device profile and clear pairing code
     await deviceRepo.update(device.id, {
       deviceName: payload.deviceName,
       osVersion: payload.osVersion,
@@ -63,7 +70,6 @@ export class DeviceService {
       lastSeenAt: new Date().toISOString(),
     });
 
-    // Invalidate consumed pairing code
     await deviceRepo.setPairingCode(device.id, '', new Date(0));
 
     await auditRepo.record({
@@ -75,10 +81,11 @@ export class DeviceService {
       metadata: { osVersion: payload.osVersion, agentVersion: payload.agentVersion },
     });
 
+    const pollSec = parseInt(process.env.NEXT_PUBLIC_AGENT_POLL_INTERVAL || '15', 10) || 15;
     return {
       deviceId: device.id,
       token,
-      pollingIntervalSec: 15,
+      pollingIntervalSec: pollSec,
     };
   }
 
@@ -105,8 +112,7 @@ export class DeviceService {
   }
 
   async revokeDevice(deviceId: string, userId: string): Promise<void> {
-    const device = await deviceRepo.findById(deviceId);
-    if (!device) throw new Error('Device not found');
+    const device = await this.assertDeviceOwnership(deviceId, userId);
     await deviceRepo.revoke(deviceId);
 
     await auditRepo.record({

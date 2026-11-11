@@ -131,14 +131,14 @@ export function OutdatedSoftwareHub({
 
             if (currentStatus === 'COMPLETED') {
               setActionMessage({
-                text: `âœ” ${jobInfo.appName} was successfully updated to v${jobInfo.targetVersion}! (100% Verified)`,
+                text: `${jobInfo.appName} was successfully updated to v${jobInfo.targetVersion}! (100% Verified)`,
                 type: 'success',
               });
               fetchUpdates();
               if (onUpdated) onUpdated();
             } else if (currentStatus === 'FAILED') {
               setActionMessage({
-                text: `âœ– Update failed for ${jobInfo.appName}. Click "View Console" for details.`,
+                text: `Update failed for ${jobInfo.appName}. Click "View Console" for details.`,
                 type: 'error',
               });
             }

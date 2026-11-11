@@ -195,7 +195,7 @@ export function UpdatePreviewModal({ isOpen, onClose, application, onUpdateCompl
                 </div>
                 {preview.warnings.map((w, idx) => (
                   <p key={idx} className="pl-5 text-[11px]">
-                    â€¢ {w}
+                    &bull; {w}
                   </p>
                 ))}
               </div>
@@ -268,11 +268,10 @@ export function UpdatePreviewModal({ isOpen, onClose, application, onUpdateCompl
                 return (
                   <div key={step.status} className="flex items-center gap-3 text-xs">
                     <div
-                      className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                        isStepPassed
+                      className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold ${isStepPassed
                           ? 'bg-emerald-500 text-white'
                           : 'bg-muted text-muted-foreground border border-border'
-                      }`}
+                        }`}
                     >
                       {idx + 1}
                     </div>

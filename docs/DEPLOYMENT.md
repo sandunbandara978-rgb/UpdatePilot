@@ -1,14 +1,14 @@
 # UpdatePilot — Vercel & Production Deployment Guide
 
 ## 1. Architecture Overview
-UpdatePilot is designed specifically for zero-maintenance serverless hosting on **Vercel** combined with a managed PostgreSQL database (such as **Neon**, **Supabase**, or **Vercel Postgres**), alongside locally distributed Windows desktop agents.
+UpdatePilot is configured for serverless hosting on **Vercel** using the repository-root [`vercel.json`](../vercel.json) combined with a managed PostgreSQL database (**Neon**, **Supabase**, or **Vercel Postgres**), alongside locally installed Windows Desktop Agents.
 
 ```mermaid
 graph TD
     Client[Web Browser] -->|HTTPS| VercelEdge[Vercel Serverless Platform]
     VercelEdge -->|App Router & API Routes| NextServer[Next.js Serverless Function]
-    NextServer -->|Connection Pooling| ManagedPG[(Managed PostgreSQL: Neon / Supabase)]
-    
+    NextServer -->|Prisma ORM| ManagedPG[(Managed PostgreSQL: Neon / Supabase)]
+
     Agent[Windows Desktop Agent] -->|Outbound HTTPS /api/v1/agent/*| VercelEdge
 ```
 
@@ -16,11 +16,11 @@ graph TD
 
 ## 2. Prerequisites
 1. **GitHub Repository:** Push this repository to GitHub.
-2. **Managed PostgreSQL Provider:**
-   - [Neon Serverless Postgres](https://neon.tech) (Recommended, generous free tier)
-   - Or [Supabase Database](https://supabase.com)
+2. **Managed PostgreSQL Database:**
+   - [Neon Serverless Postgres](https://neon.tech)
+   - [Supabase Database](https://supabase.com)
    - Or Vercel Postgres integration
-3. **Vercel Account:** Free or Pro tier.
+3. **Vercel Account:** Connected to your GitHub repository or using `vercel` CLI.
 
 ---
 
@@ -29,33 +29,37 @@ graph TD
 ### Step 1: Connect Git Repository to Vercel
 1. Log into your Vercel Dashboard and click **Add New Project**.
 2. Import the `UpdatePilot` Git repository.
-3. Configure the Root Directory:
-   - If using monorepo workspace: Set **Root Directory** to `apps/web`.
-   - Ensure the Build Command is `npm run build` and Output Directory is `.next`.
+3. Keep **Root Directory** at the repository root (`.`) — [`vercel.json`](../vercel.json) automatically sets:
+   - **Install Command:** `npm install`
+   - **Build Command:** `npm run build` (runs `prisma generate`, builds `@updatepilot/shared`, and builds `apps/web`)
+   - **Output Directory:** `apps/web/.next`
 
 ### Step 2: Configure Production Environment Variables
-In the Vercel Project Settings under **Environment Variables**, add:
+In Vercel Project Settings under **Environment Variables**, set:
 
-| Variable | Description | Example / Recommended Value |
-| :--- | :--- | :--- |
-| `DATABASE_URL` | PostgreSQL pooled connection string with SSL | `postgresql://user:pass@ep-cool-db.us-east-2.aws.neon.tech/updatepilot?sslmode=require` |
-| `SESSION_SECRET` | Cryptographic secret for signing tokens | High-entropy 32-byte string (`openssl rand -base64 32`) |
-| `NEXT_PUBLIC_APP_URL` | The production URL of your Vercel deployment | `https://updatepilot.vercel.app` |
-| `PAIRING_CODE_TTL_MINUTES` | Lifetime of agent pairing codes | `10` |
+| Variable | Required | Description |
+| :--- | :---: | :--- |
+| `DATABASE_URL` | **Yes** | Pooled PostgreSQL connection string with SSL (`?sslmode=require`) |
+| `SESSION_SECRET` | **Yes** | Cryptographic 32+ byte secret (`openssl rand -base64 32`) |
+| `NEXT_PUBLIC_APP_URL` | **Yes** | Your deployed URL (e.g. `https://updatepilot.vercel.app`) |
+| `PAIRING_CODE_TTL_MINUTES` | Optional | Pairing code lifetime in minutes (default `10`) |
+| `DEFAULT_ADMIN_PASSWORD` | Optional | Initial password when running `npm run prisma:seed` |
+| `INSTALLER_DOWNLOAD_URL` | Optional | Public URL (e.g. GitHub Release asset) for `UpdatePilot-Agent-Setup-1.0.0-x64.exe` |
 
-### Step 3: Run Database Migrations
-Run Prisma migrations against your production database instance:
+### Step 3: Push Schema & Seed Initial Admin (or Register via UI)
+Run Prisma schema push/migrations against your production PostgreSQL URL:
 ```bash
+npx prisma db push
+# Or if using migration history:
 npx prisma migrate deploy
-```
 
-### Step 4: Deploy & Verify
-1. Click **Deploy**. Vercel will build the frontend pages and serverless API route handlers.
-2. Verify production endpoints:
-   - Check `https://your-domain.vercel.app/api/v1/dashboard` returns `{ success: true, data: { ... } }`.
-   - Access the dashboard in your browser.
-   - Click "Connect Agent" to generate a pairing code.
-   - Run the agent pointing to your deployed domain:
-     ```powershell
-     .\UpdatePilot-Agent.ps1 pair -Code UP-XXXXXX -Server https://your-domain.vercel.app
-     ```
+# Optional: seed initial admin account (admin@updatepilot.local)
+npm run prisma:seed
+```
+Alternatively, visit `/login` on your deployed app and use **Create Account** to register the initial administrator account (the first registered user on an empty database is automatically granted `ADMIN` role).
+
+### Step 4: Deploy & Pair Windows Agents
+1. Trigger deployment in Vercel (`vercel --prod` or push to `main`).
+2. Verify health check:
+   - `GET https://your-domain.vercel.app/api/v1/health` returns `{ "success": true, "data": { "status": "ok", "storageMode": "postgresql" } }`.
+3. Open `https://your-domain.vercel.app`, sign in, and click **Connect Host** -> **Connect Any Computer (Fleet)** to generate a pairing code and connect any Windows 10/11 machine via the `.exe` installer or PowerShell client (`/api/v1/agent/install`).

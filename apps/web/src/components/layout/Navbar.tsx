@@ -6,7 +6,6 @@ import {
   Moon,
   RefreshCw,
   KeyRound,
-  CheckCircle2,
   ShieldAlert,
   Menu,
   Laptop,
@@ -42,24 +41,29 @@ export function Navbar({ onScanClick, onConnectAgentClick, isScanning = false }:
   }, []);
 
   const toggleTheme = () => {
-    if (isDark) {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('updatepilot_theme', 'light');
-      setIsDark(false);
-    } else {
+    const nextTheme = isDark ? 'light' : 'dark';
+    if (nextTheme === 'dark') {
       document.documentElement.classList.add('dark');
-      localStorage.setItem('updatepilot_theme', 'dark');
-      setIsDark(true);
+    } else {
+      document.documentElement.classList.remove('dark');
     }
+    localStorage.setItem('updatepilot_theme', nextTheme);
+    setIsDark(nextTheme === 'dark');
+
+    // Sync theme preference to server settings asynchronously
+    fetch('/api/v1/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ theme: nextTheme }),
+    }).catch(() => { });
   };
 
-  const triggerAppleAnimation = () => {
+  const triggerBootSplash = () => {
     window.dispatchEvent(new CustomEvent('trigger-apple-animation'));
   };
 
   return (
     <header className="sticky top-0 z-20 flex h-16 w-full items-center justify-between border-b border-black/[0.05] dark:border-white/[0.08] bg-white/75 dark:bg-[#161617]/75 px-4 sm:px-6 backdrop-blur-xl select-none transition-colors duration-300">
-      {/* Left items: Mobile menu toggle + Device Fleet Selector */}
       <div className="flex items-center gap-3">
         <button
           onClick={toggle}
@@ -80,17 +84,16 @@ export function Navbar({ onScanClick, onConnectAgentClick, isScanning = false }:
               title="Select computer to inspect"
             >
               <option value="ALL">
-                ðŸ–¥ï¸ All Computers ({devices.length} {devices.length === 1 ? 'Host' : 'Hosts'})
+                All Computers ({devices.length} {devices.length === 1 ? 'Host' : 'Hosts'})
               </option>
               {devices.map((d) => (
                 <option key={d.id} value={d.id}>
-                  {d.status === 'ONLINE' ? 'ðŸŸ¢' : 'âšª'} {d.deviceName}
+                  [{d.status === 'ONLINE' ? 'Online' : 'Offline'}] {d.deviceName}
                 </option>
               ))}
             </select>
           </div>
 
-          {/* Fleet Status Badge */}
           <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium border border-black/[0.06] dark:border-white/[0.1] bg-white/60 dark:bg-[#202022]/60 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
             {hasOnline ? (
               <>
@@ -111,43 +114,45 @@ export function Navbar({ onScanClick, onConnectAgentClick, isScanning = false }:
 
       {/* Right Controls */}
       <div className="flex items-center gap-2 sm:gap-2.5">
-        {/* Apple Mac Animation Replay Trigger */}
         <button
-          onClick={triggerAppleAnimation}
+          onClick={triggerBootSplash}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-neutral-100 hover:bg-neutral-200/80 dark:bg-white/10 dark:hover:bg-white/15 text-neutral-800 dark:text-neutral-200 border border-black/[0.06] dark:border-white/[0.1] shadow-sm transition-all duration-200 active:scale-95 group"
-          title="Play Apple macOS Boot Animation"
+          title="Replay System Diagnostics Splash"
         >
           <Sparkles className="h-3.5 w-3.5 text-[#0071e3] group-hover:rotate-12 transition-transform duration-300" />
-          <span className="hidden sm:inline">Mac Animation</span>
+          <span className="hidden sm:inline">System Splash</span>
         </button>
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onConnectAgentClick}
-          className="gap-2 text-xs font-medium rounded-full border-black/[0.08] dark:border-white/[0.12] bg-white dark:bg-transparent shadow-sm hover:shadow transition-all"
-        >
-          <KeyRound className="h-3.5 w-3.5 text-[#0071e3]" />
-          <span className="hidden xs:inline">Connect Host</span>
-        </Button>
+        {onConnectAgentClick && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onConnectAgentClick}
+            className="gap-2 text-xs font-medium rounded-full border-black/[0.08] dark:border-white/[0.12] bg-white dark:bg-transparent shadow-sm hover:shadow transition-all"
+          >
+            <KeyRound className="h-3.5 w-3.5 text-[#0071e3]" />
+            <span className="hidden xs:inline">Connect Host</span>
+          </Button>
+        )}
 
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={onScanClick}
-          isLoading={isScanning}
-          className="gap-2 text-xs font-medium rounded-full bg-[#0071e3] hover:bg-[#0077ed] text-white shadow-sm hover:shadow transition-all active:scale-95"
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-          <span className="hidden xs:inline">Scan Now</span>
-        </Button>
+        {onScanClick && (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onScanClick}
+            isLoading={isScanning}
+            className="gap-2 text-xs font-medium rounded-full bg-[#0071e3] hover:bg-[#0077ed] text-white shadow-sm hover:shadow transition-all active:scale-95"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            <span className="hidden xs:inline">Scan Now</span>
+          </Button>
+        )}
 
-        {/* Theme Toggle Button */}
         <button
           onClick={toggleTheme}
           className="p-2 rounded-full border border-black/[0.08] dark:border-white/[0.12] bg-white/80 dark:bg-neutral-800/80 hover:bg-neutral-100 dark:hover:bg-neutral-700 text-muted-foreground hover:text-foreground transition-all active:scale-90 shadow-sm"
           aria-label="Toggle visual theme"
-          title={isDark ? "Switch to Apple Clean White" : "Switch to Dark Mode"}
+          title={isDark ? 'Switch to Clean White Theme' : 'Switch to Dark Theme'}
         >
           {isDark ? (
             <Sun className="h-4 w-4 text-amber-400" />

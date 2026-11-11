@@ -3,6 +3,7 @@ import { jsonSuccess, jsonError } from '@/server/apiResponse';
 import { updateService } from '@/server/services/updateService';
 import { SecurityAuth } from '@/server/security/auth';
 import { UpdateExecuteRequestSchema } from '@updatepilot/shared';
+import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,9 +13,7 @@ export async function POST(
 ) {
   try {
     const user = SecurityAuth.getAuthenticatedUser(req);
-    const userId = user?.id || (process.env.NODE_ENV !== 'production' ? 'usr_default_admin' : null);
-
-    if (!userId) {
+    if (!user) {
       return jsonError('Authentication required to execute software updates.', 'UNAUTHORIZED', 401);
     }
 
@@ -25,12 +24,16 @@ export async function POST(
     const job = await updateService.executeUpdate({
       applicationId: id,
       acknowledgedTargetVersion: validated.acknowledgedTargetVersion,
-      userId,
+      userId: user.id,
     });
 
     return jsonSuccess({ jobId: job.id, status: job.status }, 202);
   } catch (err: unknown) {
+    if (err instanceof z.ZodError) {
+      return jsonError(err.errors[0]?.message || 'Validation failed', 'VALIDATION_ERROR', 400);
+    }
     const msg = err instanceof Error ? err.message : String(err);
-    return jsonError(msg, 'UPDATE_EXECUTE_ERROR', 400);
+    const status = msg.startsWith('Forbidden') ? 403 : 400;
+    return jsonError(msg, 'UPDATE_EXECUTE_ERROR', status);
   }
 }

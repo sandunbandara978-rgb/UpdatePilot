@@ -13,10 +13,10 @@ import {
   Laptop,
   LogOut,
   X,
-  Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useMobileNav } from '@/components/layout/MobileNavContext';
+import { useAuth } from '@/components/layout/AuthContext';
 
 const navItems = [
   { name: 'Overview', href: '/', icon: LayoutDashboard },
@@ -28,14 +28,30 @@ const navItems = [
   { name: 'Settings & Agent', href: '/settings', icon: Settings },
 ];
 
+function getInitials(name?: string, email?: string): string {
+  if (name) {
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    }
+    return name.slice(0, 2).toUpperCase();
+  }
+  return (email || 'UP').slice(0, 2).toUpperCase();
+}
+
 function SidebarNavContent({ onClose }: { onClose?: () => void }) {
   const pathname = usePathname();
+  const { user, logout } = useAuth();
+
+  const displayName = user?.name || 'Administrator';
+  const displayEmail = user?.email || 'Authenticated Session';
+  const initials = getInitials(user?.name, user?.email);
 
   return (
     <div className="flex flex-col h-full bg-white/80 dark:bg-[#161617]/85 backdrop-blur-2xl border-r border-border/70 select-none">
-      {/* macOS Traffic Lights Bar */}
+      {/* Window Controls Bar */}
       <div className="pt-4 px-6 flex items-center justify-between">
-        <div className="flex items-center gap-2 group cursor-pointer" title="macOS Window Controls">
+        <div className="flex items-center gap-2 group cursor-pointer" title="UpdatePilot Desktop Workspace">
           <div className="h-3 w-3 rounded-full bg-[#ff5f56] border border-[#e0443e]/40 shadow-inner group-hover:opacity-80 transition-opacity" />
           <div className="h-3 w-3 rounded-full bg-[#ffbd2e] border border-[#dea123]/40 shadow-inner group-hover:opacity-80 transition-opacity" />
           <div className="h-3 w-3 rounded-full bg-[#27c93f] border border-[#1aab29]/40 shadow-inner group-hover:opacity-80 transition-opacity" />
@@ -63,7 +79,7 @@ function SidebarNavContent({ onClose }: { onClose?: () => void }) {
             <span className="font-semibold text-sm tracking-tight text-foreground flex items-center gap-1.5">
               UpdatePilot
               <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded-full bg-brand-500/10 text-brand-600 dark:text-brand-400 border border-brand-500/20">
-                macOS
+                Win11
               </span>
             </span>
             <span className="text-[10px] text-muted-foreground font-normal">Host Intelligence</span>
@@ -92,7 +108,6 @@ function SidebarNavContent({ onClose }: { onClose?: () => void }) {
                   : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white hover:bg-neutral-900/[0.03] dark:hover:bg-white/[0.05]'
               )}
             >
-              {/* Subtle active pill accent */}
               {isActive && (
                 <div className="absolute left-1 h-3.5 w-1 rounded-full bg-[#0071e3] dark:bg-white" />
               )}
@@ -114,27 +129,19 @@ function SidebarNavContent({ onClose }: { onClose?: () => void }) {
       <div className="p-3 border-t border-border/50 bg-white/40 dark:bg-black/20 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2.5 overflow-hidden">
           <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-neutral-200 to-neutral-100 dark:from-neutral-700 dark:to-neutral-800 text-neutral-700 dark:text-neutral-200 flex items-center justify-center font-semibold text-xs flex-shrink-0 border border-black/5 dark:border-white/10 shadow-sm">
-            LA
+            {initials}
           </div>
           <div className="overflow-hidden">
             <span className="text-xs font-semibold text-foreground block truncate">
-              Local Administrator
+              {displayName}
             </span>
             <span className="text-[10px] text-muted-foreground block truncate">
-              admin@updatepilot.local
+              {displayEmail}
             </span>
           </div>
         </div>
         <button
-          onClick={async () => {
-            try {
-              await fetch('/api/v1/auth/logout', { method: 'POST' });
-              localStorage.removeItem('updatepilot_user');
-              window.location.href = '/login';
-            } catch {
-              window.location.href = '/login';
-            }
-          }}
+          onClick={logout}
           className="p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-colors"
           title="Sign Out"
           aria-label="Sign Out"
@@ -151,22 +158,18 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Desktop Sidebar (Fixed) */}
       <aside className="hidden lg:flex w-64 flex-col fixed inset-y-0 z-30">
         <SidebarNavContent />
       </aside>
 
-      {/* Mobile Drawer (Overlay + Drawer) */}
       {isOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
-          {/* Backdrop Overlay */}
           <div
             className="fixed inset-0 bg-black/40 backdrop-blur-md transition-opacity animate-in fade-in duration-200"
             onClick={close}
             aria-hidden="true"
           />
 
-          {/* Drawer Menu */}
           <div className="fixed inset-y-0 left-0 w-72 max-w-[85vw] shadow-2xl z-50 animate-in slide-in-from-left duration-200">
             <SidebarNavContent onClose={close} />
           </div>

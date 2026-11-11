@@ -74,4 +74,25 @@ Installer:
     expect(result.success).toBe(false);
     expect(result.error).toBe('INVALID_PACKAGE_ID');
   });
+
+  it('merges winget upgrade results into installed apps when Available column is blank in winget list', () => {
+    const installed = adapter.parseListOutput(`
+Name                        Id                  Version    Available  Source
+------------------------------------------------------------------------------
+Git                         Git.Git             2.55.0.2              winget
+7-Zip 24.08                 7zip.7zip           24.08                 winget
+`);
+    const upgradable = adapter.parseListOutput(`
+Name                        Id                  Version    Available  Source
+------------------------------------------------------------------------------
+Git                         Git.Git             2.55.0.2   2.56.0.4   winget
+`);
+
+    const merged = adapter.mergeInstalledAndUpgradable(installed, upgradable);
+    const git = merged.find((a) => a.packageId === 'Git.Git');
+    const sevenZip = merged.find((a) => a.packageId === '7zip.7zip');
+
+    expect(git?.availableVersion).toBe('2.56.0.4');
+    expect(sevenZip?.availableVersion).toBeUndefined();
+  });
 });

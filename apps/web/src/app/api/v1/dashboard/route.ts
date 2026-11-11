@@ -7,16 +7,19 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
+    const user = SecurityAuth.getAuthenticatedUser(req);
+    if (!user) {
+      return jsonError('Authentication required.', 'UNAUTHORIZED', 401);
+    }
+
     const { searchParams } = new URL(req.url);
     const deviceId = searchParams.get('deviceId') || undefined;
 
-    const user = SecurityAuth.getAuthenticatedUser(req);
-    const userId = user?.id || (process.env.NODE_ENV !== 'production' ? 'usr_default_admin' : undefined);
-
-    const metrics = await jobService.getDashboardMetrics(deviceId, userId);
+    const metrics = await jobService.getDashboardMetrics(deviceId, user.id);
     return jsonSuccess(metrics);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    return jsonError(msg, 'DASHBOARD_ERROR', 500);
+    const status = msg.startsWith('Forbidden') ? 403 : 500;
+    return jsonError(msg, 'DASHBOARD_ERROR', status);
   }
 }

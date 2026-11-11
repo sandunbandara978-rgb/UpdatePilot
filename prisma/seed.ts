@@ -1,28 +1,39 @@
 /**
  * Seed Data for UpdatePilot
- * Seeds administrative user and host device based on local machine environment.
+ * Seeds administrative user with PBKDF2-SHA512 password hash matching SecurityAuth
+ * and initial settings.
  */
 
 import { PrismaClient } from '@prisma/client';
+import * as crypto from 'crypto';
 import * as os from 'os';
 
 const prisma = new PrismaClient();
 
+function hashPasswordPBKDF2(password: string): string {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
+  return `${salt}:${hash}`;
+}
+
 async function main() {
   console.log('Seeding UpdatePilot database...');
 
-  // Create admin user
+  const initialPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'Password123!';
+  const passwordHash = hashPasswordPBKDF2(initialPassword);
+
   const adminUser = await prisma.user.upsert({
     where: { email: 'admin@updatepilot.local' },
     update: {},
     create: {
+      id: 'usr_default_admin',
       email: 'admin@updatepilot.local',
       name: 'Local Administrator',
-      passwordHash: '$2b$10$EpRnTzVlqHNP0.fUbXUwSOyuiXe/QLSUG6xNekd59gdaGQU6T6/6K', // "Password123!"
+      passwordHash,
       role: 'ADMIN',
       settings: {
         create: {
-          theme: 'dark',
+          theme: 'system',
           scanIntervalHours: 12,
           autoCheckUpdates: true,
           emailAlerts: false,
@@ -31,7 +42,7 @@ async function main() {
     },
   });
 
-  // Create host device reflecting actual physical machine
+  // Create initial host device record representing the seeded workstation
   const hostname = os.hostname();
   const hostDeviceId = `dev_${hostname.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
 
@@ -42,7 +53,7 @@ async function main() {
       id: hostDeviceId,
       userId: adminUser.id,
       deviceName: hostname,
-      osVersion: `${os.type()} ${os.release()} ${os.arch()}`,
+      osVersion: `${os.type()} ${os.release()} (${os.arch()})`,
       osBuild: os.release(),
       agentVersion: '1.0.0',
       status: 'ONLINE',
@@ -50,8 +61,9 @@ async function main() {
     },
   });
 
+  console.log(`Seeded admin user: ${adminUser.email} (${adminUser.id})`);
   console.log(`Seeded host device: ${hostDevice.deviceName} (${hostDevice.id})`);
-  console.log('Seed completed successfully. Software inventory will be populated from live host scan.');
+  console.log('Seed completed successfully.');
 }
 
 main()

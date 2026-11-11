@@ -9,6 +9,9 @@ import {
   SecurityFindingEntity,
   ApplicationStatus,
   JobStatus,
+  UserEntity,
+  UserSettingsEntity,
+  ApplicationHistoryEntity,
 } from '@updatepilot/shared';
 import {
   IDeviceRepository,
@@ -17,6 +20,9 @@ import {
   IAuditRepository,
   IReleaseMetadataRepository,
   ISecurityRepository,
+  IUserRepository,
+  ISettingsRepository,
+  IApplicationHistoryRepository,
 } from './types';
 import { SecurityAuth } from '../security/auth';
 
@@ -25,6 +31,180 @@ function getPrisma() {
     throw new Error('Prisma client is not initialized. Ensure DATABASE_URL is set.');
   }
   return prisma;
+}
+
+export class PrismaUserRepository implements IUserRepository {
+  async findById(id: string): Promise<UserEntity | null> {
+    const db = getPrisma();
+    const u = await db.user.findUnique({ where: { id } });
+    if (!u) return null;
+    return {
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      role: u.role as UserEntity['role'],
+      passwordHash: u.passwordHash,
+      createdAt: u.createdAt.toISOString(),
+    };
+  }
+
+  async findByEmail(email: string): Promise<UserEntity | null> {
+    const db = getPrisma();
+    const u = await db.user.findUnique({ where: { email: email.toLowerCase().trim() } });
+    if (!u) return null;
+    return {
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      role: u.role as UserEntity['role'],
+      passwordHash: u.passwordHash,
+      createdAt: u.createdAt.toISOString(),
+    };
+  }
+
+  async create(data: { id?: string; email: string; name: string; passwordHash: string; role?: UserEntity['role'] }): Promise<UserEntity> {
+    const db = getPrisma();
+    const u = await db.user.create({
+      data: {
+        ...(data.id ? { id: data.id } : {}),
+        email: data.email.toLowerCase().trim(),
+        name: data.name.trim(),
+        passwordHash: data.passwordHash,
+        role: data.role || 'USER',
+        settings: {
+          create: {
+            theme: 'system',
+            scanIntervalHours: 12,
+            autoCheckUpdates: true,
+            emailAlerts: false,
+          },
+        },
+      },
+    });
+    return {
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      role: u.role as UserEntity['role'],
+      passwordHash: u.passwordHash,
+      createdAt: u.createdAt.toISOString(),
+    };
+  }
+
+  async count(): Promise<number> {
+    const db = getPrisma();
+    return db.user.count();
+  }
+}
+
+export class PrismaSettingsRepository implements ISettingsRepository {
+  async getByUserId(userId: string): Promise<UserSettingsEntity> {
+    const db = getPrisma();
+    const existing = await db.userSetting.findUnique({ where: { userId } });
+    if (existing) {
+      return {
+        userId: existing.userId,
+        theme: existing.theme as UserSettingsEntity['theme'],
+        scanIntervalHours: existing.scanIntervalHours,
+        autoCheckUpdates: existing.autoCheckUpdates,
+        emailAlerts: existing.emailAlerts,
+        updatedAt: existing.updatedAt.toISOString(),
+      };
+    }
+
+    const created = await db.userSetting.create({
+      data: {
+        userId,
+        theme: 'system',
+        scanIntervalHours: 12,
+        autoCheckUpdates: true,
+        emailAlerts: false,
+      },
+    });
+    return {
+      userId: created.userId,
+      theme: created.theme as UserSettingsEntity['theme'],
+      scanIntervalHours: created.scanIntervalHours,
+      autoCheckUpdates: created.autoCheckUpdates,
+      emailAlerts: created.emailAlerts,
+      updatedAt: created.updatedAt.toISOString(),
+    };
+  }
+
+  async upsert(
+    userId: string,
+    data: Partial<Omit<UserSettingsEntity, 'userId' | 'updatedAt'>>
+  ): Promise<UserSettingsEntity> {
+    const db = getPrisma();
+    const updated = await db.userSetting.upsert({
+      where: { userId },
+      update: {
+        ...(data.theme !== undefined ? { theme: data.theme } : {}),
+        ...(data.scanIntervalHours !== undefined ? { scanIntervalHours: data.scanIntervalHours } : {}),
+        ...(data.autoCheckUpdates !== undefined ? { autoCheckUpdates: data.autoCheckUpdates } : {}),
+        ...(data.emailAlerts !== undefined ? { emailAlerts: data.emailAlerts } : {}),
+      },
+      create: {
+        userId,
+        theme: data.theme || 'system',
+        scanIntervalHours: data.scanIntervalHours ?? 12,
+        autoCheckUpdates: data.autoCheckUpdates ?? true,
+        emailAlerts: data.emailAlerts ?? false,
+      },
+    });
+
+    return {
+      userId: updated.userId,
+      theme: updated.theme as UserSettingsEntity['theme'],
+      scanIntervalHours: updated.scanIntervalHours,
+      autoCheckUpdates: updated.autoCheckUpdates,
+      emailAlerts: updated.emailAlerts,
+      updatedAt: updated.updatedAt.toISOString(),
+    };
+  }
+}
+
+export class PrismaApplicationHistoryRepository implements IApplicationHistoryRepository {
+  async record(data: {
+    applicationId: string;
+    previousVersion: string;
+    newVersion: string;
+    triggerType?: string;
+  }): Promise<ApplicationHistoryEntity> {
+    const db = getPrisma();
+    const h = await db.applicationHistory.create({
+      data: {
+        applicationId: data.applicationId,
+        previousVersion: data.previousVersion,
+        newVersion: data.newVersion,
+        triggerType: data.triggerType || 'UPDATE',
+      },
+    });
+    return {
+      id: h.id,
+      applicationId: h.applicationId,
+      previousVersion: h.previousVersion,
+      newVersion: h.newVersion,
+      triggerType: h.triggerType,
+      changedAt: h.changedAt.toISOString(),
+    };
+  }
+
+  async listByApplicationId(applicationId: string): Promise<ApplicationHistoryEntity[]> {
+    const db = getPrisma();
+    const list = await db.applicationHistory.findMany({
+      where: { applicationId },
+      orderBy: { changedAt: 'desc' },
+    });
+    return list.map((h) => ({
+      id: h.id,
+      applicationId: h.applicationId,
+      previousVersion: h.previousVersion,
+      newVersion: h.newVersion,
+      triggerType: h.triggerType,
+      changedAt: h.changedAt.toISOString(),
+    }));
+  }
 }
 
 export class PrismaDeviceRepository implements IDeviceRepository {
@@ -69,7 +249,10 @@ export class PrismaDeviceRepository implements IDeviceRepository {
 
   async listByUserId(userId: string): Promise<DeviceEntity[]> {
     const db = getPrisma();
-    const list = await db.device.findMany({ where: { userId } });
+    const list = await db.device.findMany({
+      where: { userId },
+      orderBy: { lastSeenAt: 'desc' },
+    });
     return list.map((d) => ({
       id: d.id,
       userId: d.userId,
@@ -141,7 +324,7 @@ export class PrismaDeviceRepository implements IDeviceRepository {
     await db.device.update({
       where: { id },
       data: {
-        pairingCode: code,
+        pairingCode: code || null,
         pairingCodeExpiresAt: expiresAt,
       },
     });
@@ -218,7 +401,7 @@ export class PrismaApplicationRepository implements IApplicationRepository {
   async findByPackageId(deviceId: string, packageId: string): Promise<ApplicationEntity | null> {
     const db = getPrisma();
     const a = await db.application.findFirst({
-      where: { deviceId, packageId },
+      where: { deviceId, packageId: { equals: packageId, mode: 'insensitive' } },
     });
     if (!a) return null;
     return {
@@ -237,6 +420,7 @@ export class PrismaApplicationRepository implements IApplicationRepository {
 
   async list(params: {
     deviceId?: string;
+    deviceIds?: string[];
     search?: string;
     status?: ApplicationStatus | 'ALL';
     page: number;
@@ -246,7 +430,11 @@ export class PrismaApplicationRepository implements IApplicationRepository {
   }): Promise<{ items: ApplicationEntity[]; total: number }> {
     const db = getPrisma();
     const where: any = {};
-    if (params.deviceId) where.deviceId = params.deviceId;
+    if (params.deviceId) {
+      where.deviceId = params.deviceId;
+    } else if (params.deviceIds) {
+      where.deviceId = { in: params.deviceIds };
+    }
     if (params.status && params.status !== 'ALL') where.status = params.status;
     if (params.search) {
       where.OR = [
@@ -257,7 +445,7 @@ export class PrismaApplicationRepository implements IApplicationRepository {
     }
 
     const orderBy: any = {};
-    const sortField = ['name', 'publisher', 'status', 'lastScannedAt'].includes(params.sortBy)
+    const sortField = ['name', 'publisher', 'installedVersion', 'status', 'lastScannedAt'].includes(params.sortBy)
       ? params.sortBy
       : 'name';
     orderBy[sortField] = params.sortOrder;
@@ -302,41 +490,71 @@ export class PrismaApplicationRepository implements IApplicationRepository {
     }>
   ): Promise<number> {
     const db = getPrisma();
-    let count = 0;
-
-    await db.$transaction(async (tx) => {
-      for (const app of apps) {
-        await tx.application.upsert({
-          where: {
-            deviceId_name_installedVersion: {
-              deviceId,
-              name: app.name,
-              installedVersion: app.installedVersion,
-            },
-          },
-          update: {
-            packageId: app.packageId,
-            publisher: app.publisher,
-            availableVersion: app.availableVersion,
-            source: app.source || 'winget',
-            status: app.status,
-            lastScannedAt: new Date(),
-          },
-          create: {
-            deviceId,
-            name: app.name,
-            packageId: app.packageId,
-            publisher: app.publisher,
-            installedVersion: app.installedVersion,
-            availableVersion: app.availableVersion,
-            source: app.source || 'winget',
-            status: app.status,
-            lastScannedAt: new Date(),
-          },
-        });
-        count++;
-      }
+    const existingRows = await db.application.findMany({
+      where: { deviceId },
     });
+
+    const byPackageId = new Map<string, typeof existingRows[number]>();
+    const byName = new Map<string, typeof existingRows[number]>();
+    for (const row of existingRows) {
+      if (row.packageId) byPackageId.set(row.packageId.toLowerCase(), row);
+      byName.set(row.name.toLowerCase(), row);
+    }
+
+    let count = 0;
+    const now = new Date();
+
+    await db.$transaction(
+      async (tx) => {
+        for (const app of apps) {
+          const match =
+            (app.packageId ? byPackageId.get(app.packageId.toLowerCase()) : undefined) ||
+            byName.get(app.name.toLowerCase());
+
+          if (match) {
+            if (match.installedVersion !== app.installedVersion) {
+              await tx.applicationHistory.create({
+                data: {
+                  applicationId: match.id,
+                  previousVersion: match.installedVersion,
+                  newVersion: app.installedVersion,
+                  triggerType: 'SCAN_DETECTED',
+                },
+              });
+            }
+            await tx.application.update({
+              where: { id: match.id },
+              data: {
+                name: app.name,
+                packageId: app.packageId,
+                publisher: app.publisher,
+                installedVersion: app.installedVersion,
+                availableVersion: app.availableVersion,
+                source: app.source || match.source || 'winget',
+                status: app.status,
+                lastScannedAt: now,
+              },
+            });
+          } else {
+            await tx.application.create({
+              data: {
+                deviceId,
+                name: app.name,
+                packageId: app.packageId,
+                publisher: app.publisher,
+                installedVersion: app.installedVersion,
+                availableVersion: app.availableVersion,
+                source: app.source || 'winget',
+                status: app.status,
+                lastScannedAt: now,
+              },
+            });
+          }
+          count++;
+        }
+      },
+      { timeout: 30000 }
+    );
 
     return count;
   }
@@ -462,7 +680,6 @@ export class PrismaJobRepository implements IJobRepository {
 
   async pollPendingJob(deviceId: string): Promise<{ id: string; type: 'SCAN' | 'UPDATE'; payload: any } | null> {
     const db = getPrisma();
-    // Prioritize update jobs over scan jobs
     const updateJob = await db.updateJob.findFirst({
       where: { deviceId, status: 'QUEUED' },
       orderBy: { createdAt: 'asc' },
@@ -473,6 +690,7 @@ export class PrismaJobRepository implements IJobRepository {
         id: updateJob.id,
         type: 'UPDATE',
         payload: {
+          applicationId: updateJob.applicationId,
           packageId: updateJob.packageId,
           targetVersion: updateJob.targetVersion,
           currentVersion: updateJob.currentVersion,
@@ -524,7 +742,7 @@ export class PrismaJobRepository implements IJobRepository {
     if (data.status) updateData.status = data.status;
     if (data.appsDiscovered !== undefined) updateData.appsDiscovered = data.appsDiscovered;
     if (data.updatesDetected !== undefined) updateData.updatesDetected = data.updatesDetected;
-    if (data.errorDetails) updateData.errorDetails = data.errorDetails;
+    if (data.errorDetails !== undefined) updateData.errorDetails = data.errorDetails;
     if (data.startedAt) updateData.startedAt = new Date(data.startedAt);
     if (data.completedAt) updateData.completedAt = new Date(data.completedAt);
 
@@ -550,14 +768,20 @@ export class PrismaJobRepository implements IJobRepository {
     });
   }
 
-  async listRecentJobs(limit: number): Promise<Array<{ id: string; type: 'SCAN' | 'UPDATE'; title: string; status: JobStatus; timestamp: string; details?: string }>> {
+  async listRecentJobs(
+    limit: number,
+    deviceIds?: string[]
+  ): Promise<Array<{ id: string; type: 'SCAN' | 'UPDATE'; title: string; status: JobStatus; timestamp: string; details?: string }>> {
     const db = getPrisma();
+    const whereClause = deviceIds ? { deviceId: { in: deviceIds } } : undefined;
     const [scans, updates] = await Promise.all([
       db.scanJob.findMany({
+        where: whereClause,
         take: limit,
         orderBy: { createdAt: 'desc' },
       }),
       db.updateJob.findMany({
+        where: whereClause,
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: { application: true },
@@ -585,7 +809,7 @@ export class PrismaJobRepository implements IJobRepository {
         title: `Update ${u.packageId} -> v${u.targetVersion}`,
         status: u.status as JobStatus,
         timestamp: (u.completedAt || u.createdAt).toISOString(),
-        details: u.status === 'COMPLETED' ? 'Version verified successfully' : u.executionOutput || undefined,
+        details: u.status === 'COMPLETED' ? 'Version verified successfully' : u.verificationDetails || u.executionOutput || undefined,
         createdAtRaw: u.createdAt,
       });
     });
@@ -601,15 +825,21 @@ export class PrismaJobRepository implements IJobRepository {
     }));
   }
 
-  async listUpdateHistory(page: number, limit: number): Promise<{ items: UpdateJobEntity[]; total: number }> {
+  async listUpdateHistory(
+    page: number,
+    limit: number,
+    deviceIds?: string[]
+  ): Promise<{ items: UpdateJobEntity[]; total: number }> {
     const db = getPrisma();
+    const whereClause = deviceIds ? { deviceId: { in: deviceIds } } : undefined;
     const [items, total] = await Promise.all([
       db.updateJob.findMany({
+        where: whereClause,
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { createdAt: 'desc' },
       }),
-      db.updateJob.count(),
+      db.updateJob.count({ where: whereClause }),
     ]);
 
     return {
@@ -650,9 +880,11 @@ export class PrismaAuditRepository implements IAuditRepository {
     });
   }
 
-  async list(limit: number): Promise<AuditEventEntity[]> {
+  async list(limit: number, deviceIds?: string[]): Promise<AuditEventEntity[]> {
     const db = getPrisma();
+    const whereClause = deviceIds ? { deviceId: { in: deviceIds } } : undefined;
     const list = await db.auditEvent.findMany({
+      where: whereClause,
       take: limit,
       orderBy: { createdAt: 'desc' },
     });
@@ -720,7 +952,27 @@ export class PrismaSecurityRepository implements ISecurityRepository {
   async listByPackageId(packageId: string): Promise<SecurityFindingEntity[]> {
     const db = getPrisma();
     const findings = await db.securityFinding.findMany({
-      where: { packageId },
+      where: { packageId: { equals: packageId, mode: 'insensitive' } },
+      orderBy: { publishedAt: 'desc' },
+    });
+    return findings.map((s) => ({
+      id: s.id,
+      packageId: s.packageId,
+      cveId: s.cveId,
+      summary: s.summary,
+      severity: s.severity as any,
+      affectedVersions: s.affectedVersions,
+      fixedVersion: s.fixedVersion || undefined,
+      advisoryUrl: s.advisoryUrl || undefined,
+      publishedAt: s.publishedAt.toISOString(),
+    }));
+  }
+
+  async listForPackageIds(packageIds: string[]): Promise<SecurityFindingEntity[]> {
+    if (packageIds.length === 0) return [];
+    const db = getPrisma();
+    const findings = await db.securityFinding.findMany({
+      where: { packageId: { in: packageIds } },
       orderBy: { publishedAt: 'desc' },
     });
     return findings.map((s) => ({
@@ -752,5 +1004,32 @@ export class PrismaSecurityRepository implements ISecurityRepository {
       advisoryUrl: s.advisoryUrl || undefined,
       publishedAt: s.publishedAt.toISOString(),
     }));
+  }
+
+  async replaceForPackages(
+    packageIds: string[],
+    findings: Array<Omit<SecurityFindingEntity, 'id'>>
+  ): Promise<void> {
+    if (packageIds.length === 0) return;
+    const db = getPrisma();
+    await db.$transaction(async (tx) => {
+      await tx.securityFinding.deleteMany({
+        where: { packageId: { in: packageIds } },
+      });
+      if (findings.length > 0) {
+        await tx.securityFinding.createMany({
+          data: findings.map((f) => ({
+            packageId: f.packageId,
+            cveId: f.cveId,
+            summary: f.summary,
+            severity: f.severity,
+            affectedVersions: f.affectedVersions,
+            fixedVersion: f.fixedVersion || null,
+            advisoryUrl: f.advisoryUrl || null,
+            publishedAt: new Date(f.publishedAt),
+          })),
+        });
+      }
+    });
   }
 }

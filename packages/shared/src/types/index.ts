@@ -118,6 +118,33 @@ export interface SecurityFindingEntity {
   publishedAt: string;
 }
 
+export interface UserEntity {
+  id: string;
+  email: string;
+  name: string;
+  role: 'ADMIN' | 'OPERATOR' | 'VIEWER' | 'USER';
+  passwordHash: string;
+  createdAt: string;
+}
+
+export interface UserSettingsEntity {
+  userId: string;
+  theme: 'light' | 'dark' | 'system';
+  scanIntervalHours: number;
+  autoCheckUpdates: boolean;
+  emailAlerts: boolean;
+  updatedAt: string;
+}
+
+export interface ApplicationHistoryEntity {
+  id: string;
+  applicationId: string;
+  previousVersion: string;
+  newVersion: string;
+  triggerType: string;
+  changedAt: string;
+}
+
 export interface DashboardMetrics {
   totalApplications: number;
   updatesAvailable: number;

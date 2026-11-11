@@ -1,4 +1,4 @@
-import { jobRepo, applicationRepo, deviceRepo, auditRepo } from '../repositories';
+import { jobRepo, applicationRepo, deviceRepo, auditRepo, appHistoryRepo } from '../repositories';
 import { deviceService } from './deviceService';
 import { DashboardMetrics, JobStatus, UpdateJobEntity } from '@updatepilot/shared';
 
@@ -10,7 +10,6 @@ export class JobService {
 
   async claimJobByAgent(token: string, jobId: string) {
     const deviceId = await deviceService.verifyAgentToken(token);
-    // Try update job first with device ownership validation
     const claimedUpdate = await jobRepo.claimJob(jobId, 'UPDATE', deviceId);
     if (claimedUpdate) return { claimed: true };
 
@@ -31,7 +30,6 @@ export class JobService {
   ) {
     const deviceId = await deviceService.verifyAgentToken(token);
 
-    // Check if it's an update job
     const updateJob = await jobRepo.findUpdateJobById(jobId);
     if (updateJob) {
       if (updateJob.deviceId !== deviceId) {
@@ -52,13 +50,19 @@ export class JobService {
           throw new Error('Verification required: Completed status requires a verifiedVersion.');
         }
         updateData.completedAt = new Date().toISOString();
-        // Update the application status to UP_TO_DATE and update installed version
         await applicationRepo.updateStatus(
           updateJob.applicationId,
           'UP_TO_DATE',
           report.verifiedVersion,
           null
         );
+
+        await appHistoryRepo.record({
+          applicationId: updateJob.applicationId,
+          previousVersion: updateJob.currentVersion,
+          newVersion: report.verifiedVersion,
+          triggerType: 'AGENT_UPDATE',
+        });
 
         await auditRepo.record({
           deviceId,
@@ -82,7 +86,6 @@ export class JobService {
       return { acknowledged: true };
     }
 
-    // Check if it's a scan job
     const scanJob = await jobRepo.findScanJobById(jobId);
     if (scanJob) {
       if (scanJob.deviceId !== deviceId) {
@@ -100,28 +103,49 @@ export class JobService {
     return { acknowledged: false };
   }
 
-  async getJobStatus(jobId: string) {
+  async getJobStatus(jobId: string, userId?: string) {
     const updateJob = await jobRepo.findUpdateJobById(jobId);
     if (updateJob) {
-      return { type: 'UPDATE', job: updateJob };
+      if (userId) {
+        await deviceService.assertDeviceOwnership(updateJob.deviceId, userId);
+      }
+      return { type: 'UPDATE' as const, job: updateJob };
     }
     const scanJob = await jobRepo.findScanJobById(jobId);
     if (scanJob) {
-      return { type: 'SCAN', job: scanJob };
+      if (userId) {
+        await deviceService.assertDeviceOwnership(scanJob.deviceId, userId);
+      }
+      return { type: 'SCAN' as const, job: scanJob };
     }
     return null;
   }
 
   async getDashboardMetrics(deviceId?: string, userId?: string): Promise<DashboardMetrics> {
-    const allAppsRes = await applicationRepo.list({
-      deviceId: deviceId && deviceId !== 'ALL' ? deviceId : undefined,
-      page: 1,
-      limit: 1000,
-      sortBy: 'name',
-      sortOrder: 'asc',
-    });
+    const targetUserId = userId || 'usr_default_admin';
+    const devices = await deviceRepo.listByUserId(targetUserId);
+    const ownedDeviceIds = devices.map((d) => d.id);
 
-    const apps = allAppsRes.items;
+    if (deviceId && deviceId !== 'ALL' && !ownedDeviceIds.includes(deviceId)) {
+      throw new Error('Forbidden: Access denied to device metrics.');
+    }
+
+    let apps: Array<{ status: string }> = [];
+    let totalApplications = 0;
+
+    if (ownedDeviceIds.length > 0) {
+      const allAppsRes = await applicationRepo.list({
+        deviceId: deviceId && deviceId !== 'ALL' ? deviceId : undefined,
+        deviceIds: deviceId && deviceId !== 'ALL' ? undefined : ownedDeviceIds,
+        page: 1,
+        limit: 1000,
+        sortBy: 'name',
+        sortOrder: 'asc',
+      });
+      apps = allAppsRes.items;
+      totalApplications = allAppsRes.total;
+    }
+
     let updatesAvailable = 0;
     let upToDate = 0;
     let unsupported = 0;
@@ -134,25 +158,32 @@ export class JobService {
       else unknown++;
     }
 
-    const targetUserId = userId || 'usr_default_admin';
-    const devices = await deviceRepo.listByUserId(targetUserId);
     const activeDevices = devices.filter((d) => d.status === 'ONLINE');
-
-    const recentActivity = await jobRepo.listRecentJobs(10);
+    const recentActivity = ownedDeviceIds.length > 0
+      ? await jobRepo.listRecentJobs(10, deviceId && deviceId !== 'ALL' ? [deviceId] : ownedDeviceIds)
+      : [];
 
     return {
-      totalApplications: allAppsRes.total,
+      totalApplications,
       updatesAvailable,
       upToDate,
       unsupported,
       unknown,
       activeDevicesCount: activeDevices.length,
-      lastScanTimestamp: recentActivity.find((a) => a.type === 'SCAN')?.timestamp || new Date().toISOString(),
+      lastScanTimestamp: recentActivity.find((a) => a.type === 'SCAN')?.timestamp || null,
       recentActivity,
     };
   }
 
-  async getUpdateHistory(page: number = 1, limit: number = 20) {
+  async getUpdateHistory(page: number = 1, limit: number = 20, userId?: string) {
+    if (userId) {
+      const devices = await deviceRepo.listByUserId(userId);
+      const deviceIds = devices.map((d) => d.id);
+      if (deviceIds.length === 0) {
+        return { items: [], total: 0 };
+      }
+      return jobRepo.listUpdateHistory(page, limit, deviceIds);
+    }
     return jobRepo.listUpdateHistory(page, limit);
   }
 }

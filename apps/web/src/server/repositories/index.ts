@@ -5,6 +5,9 @@ import {
   MemoryAuditRepository,
   MemoryReleaseMetadataRepository,
   MemorySecurityRepository,
+  MemoryUserRepository,
+  MemorySettingsRepository,
+  MemoryApplicationHistoryRepository,
   memoryStore,
 } from './memoryStore';
 import {
@@ -14,6 +17,9 @@ import {
   PrismaAuditRepository,
   PrismaReleaseMetadataRepository,
   PrismaSecurityRepository,
+  PrismaUserRepository,
+  PrismaSettingsRepository,
+  PrismaApplicationHistoryRepository,
 } from './prismaRepositories';
 import {
   IDeviceRepository,
@@ -22,6 +28,9 @@ import {
   IAuditRepository,
   IReleaseMetadataRepository,
   ISecurityRepository,
+  IUserRepository,
+  ISettingsRepository,
+  IApplicationHistoryRepository,
 } from './types';
 
 export * from './types';
@@ -30,12 +39,24 @@ export * from './types';
 const hasDatabase = Boolean(process.env.DATABASE_URL);
 
 if (!hasDatabase && process.env.NODE_ENV === 'production') {
-  console.error(
-    'CRITICAL WARNING: DATABASE_URL is not set in production! UpdatePilot will run with disk-backed storage. Configure a persistent PostgreSQL database for production multi-tenant reliability.'
+  console.warn(
+    'NOTICE: DATABASE_URL is not set in production. UpdatePilot is running with local disk storage (data/updatepilot-storage.json). Configure DATABASE_URL for managed PostgreSQL multi-tenant persistence.'
   );
 }
 
-// Singleton repository instances (Prisma with live DB, seamless Memory fallback for local/test dev)
+// Singleton repository instances (Prisma with live DB, seamless disk-backed MemoryStore fallback)
+export const userRepo: IUserRepository = hasDatabase
+  ? new PrismaUserRepository()
+  : new MemoryUserRepository();
+
+export const settingsRepo: ISettingsRepository = hasDatabase
+  ? new PrismaSettingsRepository()
+  : new MemorySettingsRepository();
+
+export const appHistoryRepo: IApplicationHistoryRepository = hasDatabase
+  ? new PrismaApplicationHistoryRepository()
+  : new MemoryApplicationHistoryRepository();
+
 export const deviceRepo: IDeviceRepository = hasDatabase
   ? new PrismaDeviceRepository()
   : new MemoryDeviceRepository();

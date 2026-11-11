@@ -1,97 +1,115 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
 import { MobileNavProvider } from '@/components/layout/MobileNavContext';
 import { DeviceProvider } from '@/components/layout/DeviceContext';
+import { AuthProvider, ClientSessionUser } from '@/components/layout/AuthContext';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [isInitializing, setIsInitializing] = useState(true);
-  const [isPlayingAppleAnimation, setIsPlayingAppleAnimation] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isPlayingBootSplash, setIsPlayingBootSplash] = useState(false);
+  const [currentUser, setCurrentUser] = useState<ClientSessionUser | null>(null);
 
   useEffect(() => {
-    // Listen for custom trigger to replay Apple Mac boot animation anytime
     const handleTrigger = () => {
-      setIsPlayingAppleAnimation(true);
+      setIsPlayingBootSplash(true);
     };
     window.addEventListener('trigger-apple-animation', handleTrigger);
     return () => window.removeEventListener('trigger-apple-animation', handleTrigger);
   }, []);
 
+  const logout = useCallback(async () => {
+    try {
+      await fetch('/api/v1/auth/logout', { method: 'POST' });
+    } catch {
+      // continue redirect regardless
+    }
+    localStorage.removeItem('updatepilot_user');
+    setCurrentUser(null);
+    router.replace('/login');
+  }, [router]);
+
   useEffect(() => {
-    // If on login page, skip loading screen and render immediately
     if (pathname === '/login') {
       setIsInitializing(false);
       return;
     }
 
-    // Check authentication with /api/v1/auth/me or cookie/localStorage
+    let cancelled = false;
+
     const checkAuth = async () => {
       try {
-        const storedUser = localStorage.getItem('updatepilot_user');
-        const res = await fetch('/api/v1/auth/me');
+        const res = await fetch('/api/v1/auth/me', { cache: 'no-store' });
         const data = await res.json();
 
-        if (data.success && data.data?.user) {
-          setIsAuthenticated(true);
+        if (cancelled) return;
+
+        if (res.ok && data.success && data.data?.user) {
+          setCurrentUser(data.data.user);
           localStorage.setItem('updatepilot_user', JSON.stringify(data.data.user));
-        } else if (storedUser) {
-          // Fallback to stored session in dev
-          setIsAuthenticated(true);
+          setTimeout(() => {
+            if (!cancelled) setIsInitializing(false);
+          }, 450);
         } else {
-          setIsAuthenticated(false);
+          localStorage.removeItem('updatepilot_user');
+          setCurrentUser(null);
+          setIsInitializing(false);
           router.replace('/login');
-          return;
         }
       } catch {
-        // If error or offline, fallback to dev session
-        setIsAuthenticated(true);
-      } finally {
-        // Graceful duration so the Apple Mac loading animation plays smoothly
-        setTimeout(() => {
-          setIsInitializing(false);
-        }, 850);
+        if (cancelled) return;
+        localStorage.removeItem('updatepilot_user');
+        setCurrentUser(null);
+        setIsInitializing(false);
+        router.replace('/login');
       }
     };
 
     checkAuth();
+
+    return () => {
+      cancelled = true;
+    };
   }, [pathname, router]);
 
-  // Login page layout (no sidebar)
   if (pathname === '/login') {
     return <>{children}</>;
   }
 
-  // Apple Mac Style Boot / Loading screen
-  if (isInitializing || isPlayingAppleAnimation) {
+  if (isInitializing || isPlayingBootSplash) {
     return (
       <LoadingScreen
-        message="UpdatePilot macOS Intelligence"
-        subMessage="Validating host credentials & WinGet catalog"
+        message="UpdatePilot Host Intelligence"
+        subMessage="Validating session & WinGet catalog"
         onFinish={() => {
-          setIsInitializing(false);
-          setIsPlayingAppleAnimation(false);
+          if (currentUser) setIsInitializing(false);
+          setIsPlayingBootSplash(false);
         }}
       />
     );
   }
 
-  // Protected App Layout
+  if (!currentUser) {
+    return null;
+  }
+
   return (
-    <DeviceProvider>
-      <MobileNavProvider>
-        <div className="flex min-h-screen">
-          <Sidebar />
-          <div className="flex-1 lg:pl-64 flex flex-col min-h-screen">
-            <main className="flex-1 pb-16">{children}</main>
+    <AuthProvider user={currentUser} logout={logout}>
+      <DeviceProvider>
+        <MobileNavProvider>
+          <div className="flex min-h-screen">
+            <Sidebar />
+            <div className="flex-1 lg:pl-64 flex flex-col min-h-screen">
+              <main className="flex-1 pb-16">{children}</main>
+            </div>
           </div>
-        </div>
-      </MobileNavProvider>
-    </DeviceProvider>
+        </MobileNavProvider>
+      </DeviceProvider>
+    </AuthProvider>
   );
 }

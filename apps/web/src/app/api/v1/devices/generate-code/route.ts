@@ -9,15 +9,12 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
   try {
     const user = SecurityAuth.getAuthenticatedUser(req);
-    const userId = user?.id || (process.env.NODE_ENV !== 'production' ? 'usr_default_admin' : null);
-
-    if (!userId) {
+    if (!user) {
       return jsonError('Authentication required to generate pairing codes.', 'UNAUTHORIZED', 401);
     }
 
-    const result = await deviceService.generatePairingCode(userId);
+    const result = await deviceService.generatePairingCode(user.id);
 
-    // Discover LAN IPv4 addresses on the host machine for remote computers
     const nets = os.networkInterfaces();
     const lanIps: string[] = [];
     for (const name of Object.keys(nets)) {

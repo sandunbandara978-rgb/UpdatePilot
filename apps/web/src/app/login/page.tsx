@@ -2,51 +2,74 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Laptop, ShieldCheck, Eye, EyeOff, Lock, Mail, Copy, Check, ArrowRight, KeyRound } from 'lucide-react';
+import {
+  Laptop,
+  ShieldCheck,
+  Eye,
+  EyeOff,
+  Lock,
+  Mail,
+  User,
+  Copy,
+  Check,
+  ArrowRight,
+  KeyRound,
+} from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+
+const SHOW_DEV_CREDENTIALS =
+  process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('admin@updatepilot.local');
-  const [password, setPassword] = useState('Password123!');
-  const [showPassword, setShowPassword] = useState(true); // show password by default as requested!
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState(SHOW_DEV_CREDENTIALS ? 'admin@updatepilot.local' : '');
+  const [password, setPassword] = useState(SHOW_DEV_CREDENTIALS ? 'Password123!' : '');
+  const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isCopiedUser, setIsCopiedUser] = useState(false);
   const [isCopiedPass, setIsCopiedPass] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
 
     try {
-      const res = await fetch('/api/v1/auth/login', {
+      const endpoint = mode === 'login' ? '/api/v1/auth/login' : '/api/v1/auth/register';
+      const payload = mode === 'login' ? { email, password } : { name, email, password };
+
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
 
       if (data.success) {
-        // Save user session in localStorage as well
-        localStorage.setItem('updatepilot_user', JSON.stringify(data.data.user));
-        // Redirect to dashboard
+        if (rememberMe) {
+          localStorage.setItem('updatepilot_user', JSON.stringify(data.data.user));
+        } else {
+          localStorage.removeItem('updatepilot_user');
+        }
         router.push('/');
         router.refresh();
       } else {
-        setError(data.error?.message || 'Invalid credentials. Please verify and try again.');
+        setError(data.error?.message || 'Authentication failed. Please check your details.');
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Connection error during login');
+      setError(err instanceof Error ? err.message : 'Connection error during authentication');
     } finally {
       setIsLoading(false);
     }
   };
 
   const autofillDemo = () => {
+    setMode('login');
     setEmail('admin@updatepilot.local');
     setPassword('Password123!');
     setError(null);
@@ -65,7 +88,6 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center p-4 bg-background relative overflow-hidden">
-      {/* Ambient background glow */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[500px] w-[500px] rounded-full bg-brand-500/10 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-10 right-10 h-72 w-72 rounded-full bg-blue-600/10 blur-[100px] pointer-events-none" />
 
@@ -83,75 +105,124 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Demo Credentials Callout Box */}
-        <div className="p-4 rounded-xl bg-card border-2 border-brand-500/30 shadow-lg shadow-brand-500/5 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-brand-600 dark:text-brand-400 uppercase tracking-wider">
-              <KeyRound className="h-3.5 w-3.5" />
-              <span>Default Access Credentials</span>
+        {/* Dev Credential Callout (never shown in unconfigured production unless explicitly enabled) */}
+        {SHOW_DEV_CREDENTIALS && mode === 'login' && (
+          <div className="p-4 rounded-xl bg-card border-2 border-brand-500/30 shadow-lg shadow-brand-500/5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-brand-600 dark:text-brand-400 uppercase tracking-wider">
+                <KeyRound className="h-3.5 w-3.5" />
+                <span>Seeded Local Admin Account</span>
+              </div>
+              <button
+                type="button"
+                onClick={autofillDemo}
+                className="text-[11px] font-semibold text-brand-500 hover:text-brand-600 underline"
+              >
+                One-Click Autofill
+              </button>
             </div>
+
+            <div className="grid grid-cols-1 gap-2 text-xs">
+              <div className="flex items-center justify-between p-2.5 rounded-lg bg-muted/60 border border-border/60">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] text-muted-foreground uppercase font-semibold block">Username / Email:</span>
+                  <span className="font-mono font-bold text-foreground">admin@updatepilot.local</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => copyText('admin@updatepilot.local', 'user')}
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  title="Copy username"
+                >
+                  {isCopiedUser ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between p-2.5 rounded-lg bg-muted/60 border border-border/60">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] text-muted-foreground uppercase font-semibold block">Password:</span>
+                  <span className="font-mono font-bold text-brand-600 dark:text-brand-400">Password123!</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => copyText('Password123!', 'pass')}
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  title="Copy password"
+                >
+                  {isCopiedPass ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Main Login / Register Card */}
+        <div className="p-6 rounded-2xl bg-card border border-border/80 shadow-xl space-y-5">
+          {/* Mode Toggle */}
+          <div className="grid grid-cols-2 p-1 rounded-xl bg-muted/60 border border-border/60 text-xs font-semibold">
             <button
               type="button"
-              onClick={autofillDemo}
-              className="text-[11px] font-semibold text-brand-500 hover:text-brand-600 underline"
+              onClick={() => {
+                setMode('login');
+                setError(null);
+              }}
+              className={`py-2 rounded-lg transition-all ${
+                mode === 'login'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
             >
-              One-Click Autofill
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMode('register');
+                setError(null);
+              }}
+              className={`py-2 rounded-lg transition-all ${
+                mode === 'register'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Create Account
             </button>
           </div>
 
-          <div className="grid grid-cols-1 gap-2 text-xs">
-            {/* Username/Email */}
-            <div className="flex items-center justify-between p-2.5 rounded-lg bg-muted/60 border border-border/60">
-              <div className="space-y-0.5">
-                <span className="text-[10px] text-muted-foreground uppercase font-semibold block">Username / Email:</span>
-                <span className="font-mono font-bold text-foreground">admin@updatepilot.local</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => copyText('admin@updatepilot.local', 'user')}
-                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                title="Copy username"
-              >
-                {isCopiedUser ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-              </button>
-            </div>
-
-            {/* Password */}
-            <div className="flex items-center justify-between p-2.5 rounded-lg bg-muted/60 border border-border/60">
-              <div className="space-y-0.5">
-                <span className="text-[10px] text-muted-foreground uppercase font-semibold block">Password:</span>
-                <span className="font-mono font-bold text-brand-600 dark:text-brand-400">Password123!</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => copyText('Password123!', 'pass')}
-                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                title="Copy password"
-              >
-                {isCopiedPass ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Main Login Form Card */}
-        <div className="p-6 rounded-2xl bg-card border border-border/80 shadow-xl space-y-5">
           {error && (
             <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-600 dark:text-red-400 font-medium">
               {error}
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            {/* Username/Email Input */}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {mode === 'register' && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground block">Full Name</label>
+                <div className="relative">
+                  <User className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <input
+                    type="text"
+                    required
+                    minLength={2}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Alex Mercer"
+                    className="w-full pl-9 pr-3 py-2 rounded-lg bg-background border border-border/80 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-500 font-medium"
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-foreground block">
-                Username or Email
+                {mode === 'login' ? 'Username or Email' : 'Email Address'}
               </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                 <input
-                  type="text"
+                  type={mode === 'register' ? 'email' : 'text'}
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -161,12 +232,9 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {/* Password Input with Show/Hide Toggle */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-foreground block">
-                  Password
-                </label>
+                <label className="text-xs font-semibold text-foreground block">Password</label>
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
@@ -181,22 +249,23 @@ export default function LoginPage() {
                 <input
                   type={showPassword ? 'text' : 'password'}
                   required
+                  minLength={mode === 'register' ? 8 : 1}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Password123!"
+                  placeholder={mode === 'register' ? 'Minimum 8 characters' : 'Enter password'}
                   className="w-full pl-9 pr-10 py-2 rounded-lg bg-background border border-border/80 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-500 font-medium"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground"
+                  aria-label="Toggle password visibility"
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
             </div>
 
-            {/* Remember Me */}
             <div className="flex items-center justify-between text-xs pt-1">
               <label className="flex items-center gap-2 cursor-pointer text-muted-foreground hover:text-foreground">
                 <input
@@ -209,7 +278,6 @@ export default function LoginPage() {
               </label>
             </div>
 
-            {/* Submit Button */}
             <Button
               type="submit"
               variant="primary"
@@ -217,16 +285,15 @@ export default function LoginPage() {
               isLoading={isLoading}
               className="w-full gap-2 text-sm font-bold shadow-md shadow-brand-500/20"
             >
-              <span>Sign In to UpdatePilot</span>
+              <span>{mode === 'login' ? 'Sign In to UpdatePilot' : 'Create Account & Continue'}</span>
               <ArrowRight className="h-4 w-4" />
             </Button>
           </form>
         </div>
 
-        {/* Security footer */}
         <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
           <ShieldCheck className="h-4 w-4 text-emerald-500" />
-          <span>Protected by Host DPAPI & HMAC Authentication</span>
+          <span>Protected by PBKDF2-SHA512 & HMAC Session Authentication</span>
         </div>
       </div>
     </div>

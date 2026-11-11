@@ -69,18 +69,9 @@ function Load-Creds {
     return $null
 }
 
-function Get-WinGetApps {
-    Write-Host "[UpdatePilot] Inspecting installed software via Windows Package Manager (WinGet)..." -ForegroundColor Cyan
-    $wingetCheck = (Get-Command winget -ErrorAction SilentlyContinue)
-    if (-not $wingetCheck) {
-        Write-Host "[ERROR] winget.exe not found. WinGet is required." -ForegroundColor Red
-        return @()
-    }
-
-    $raw = & winget list --accept-source-agreements 2>$null
-    if (-not $raw) { return @() }
-
-    $lines = $raw -split "`r?`n"
+function Parse-WinGetTable($rawOutput) {
+    if (-not $rawOutput) { return @() }
+    $lines = $rawOutput -split "`r?`n"
     $separatorIdx = -1
     $headerLine = ""
 
@@ -100,12 +91,12 @@ function Get-WinGetApps {
     $availCol = $headerLine.IndexOf("Available")
     $srcCol = $headerLine.IndexOf("Source")
 
-    $apps = [System.Collections.Generic.List[PSObject]]::new()
+    $rows = [System.Collections.Generic.List[PSObject]]::new()
 
     for ($i = $separatorIdx + 1; $i -lt $lines.Length; $i++) {
         $line = $lines[$i]
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
-        if ($line -like "*<additional entries truncated*" -or $line -like "*agreements*") { continue }
+        if ($line -like "*<additional entries truncated*" -or $line -like "*agreements*" -or $line -match "^\d+\s+upgrades?\s+available") { continue }
 
         try {
             $name = ""
@@ -135,7 +126,7 @@ function Get-WinGetApps {
             }
 
             if ($name -and $ver) {
-                $apps.Add([PSCustomObject]@{
+                $rows.Add([PSCustomObject]@{
                     name = $name
                     packageId = $id
                     installedVersion = $ver
@@ -146,7 +137,37 @@ function Get-WinGetApps {
         } catch {}
     }
 
-    return $apps
+    return $rows
+}
+
+function Get-WinGetApps {
+    Write-Host "[UpdatePilot] Inspecting installed software & available upgrades via WinGet..." -ForegroundColor Cyan
+    $wingetCheck = (Get-Command winget -ErrorAction SilentlyContinue)
+    if (-not $wingetCheck) {
+        Write-Host "[ERROR] winget.exe not found. WinGet is required." -ForegroundColor Red
+        return @()
+    }
+
+    $rawList = & winget list --accept-source-agreements 2>$null
+    $rawUpgrade = & winget upgrade --accept-source-agreements 2>$null
+
+    $installed = Parse-WinGetTable $rawList
+    $upgradable = Parse-WinGetTable $rawUpgrade
+
+    $upgradeMap = @{}
+    foreach ($u in $upgradable) {
+        if ($u.packageId -and $u.availableVersion) {
+            $upgradeMap[$u.packageId.ToLower()] = $u.availableVersion
+        }
+    }
+
+    foreach ($app in $installed) {
+        if ($app.packageId -and $upgradeMap.ContainsKey($app.packageId.ToLower())) {
+            $app.availableVersion = $upgradeMap[$app.packageId.ToLower()]
+        }
+    }
+
+    return $installed
 }
 
 # --- Actions ---
@@ -355,7 +376,13 @@ if ($Service) {
                 }
             }
         } catch {
-            Write-Host "[WARNING] Polling error: $($_.Exception.Message)" -ForegroundColor DarkGray
+            $errMsg = $_.Exception.Message
+            if ($errMsg -match "401|Unauthorized|revoked") {
+                Write-Host "[ERROR] Agent credentials revoked by server. Clearing local credentials and stopping." -ForegroundColor Red
+                if (Test-Path $CredPath) { Remove-Item $CredPath -Force }
+                break
+            }
+            Write-Host "[WARNING] Polling error: $errMsg" -ForegroundColor DarkGray
         }
 
         Start-Sleep -Seconds 15

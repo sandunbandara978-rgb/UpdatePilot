@@ -127,22 +127,34 @@ function SidebarNavContent({ onClose }: { onClose?: () => void }) {
 
       {/* User Profile & Logout */}
       <div className="p-3 border-t border-border/50 bg-white/40 dark:bg-black/20 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2.5 overflow-hidden">
+        <Link
+          href="/settings#account"
+          onClick={onClose}
+          className="flex items-center gap-2.5 overflow-hidden rounded-lg p-1 -m-1 hover:bg-neutral-900/[0.04] dark:hover:bg-white/[0.05] transition-colors flex-1"
+          title="View account & login details"
+        >
           <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-neutral-200 to-neutral-100 dark:from-neutral-700 dark:to-neutral-800 text-neutral-700 dark:text-neutral-200 flex items-center justify-center font-semibold text-xs flex-shrink-0 border border-black/5 dark:border-white/10 shadow-sm">
             {initials}
           </div>
-          <div className="overflow-hidden">
-            <span className="text-xs font-semibold text-foreground block truncate">
-              {displayName}
-            </span>
+          <div className="overflow-hidden min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-foreground block truncate">
+                {displayName}
+              </span>
+              {user?.role && (
+                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-brand-500/10 text-brand-600 dark:text-brand-400 border border-brand-500/20 shrink-0">
+                  {user.role}
+                </span>
+              )}
+            </div>
             <span className="text-[10px] text-muted-foreground block truncate">
               {displayEmail}
             </span>
           </div>
-        </div>
+        </Link>
         <button
           onClick={logout}
-          className="p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-colors"
+          className="p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-colors shrink-0"
           title="Sign Out"
           aria-label="Sign Out"
         >

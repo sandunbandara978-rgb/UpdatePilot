@@ -6,7 +6,8 @@ import { ConnectAgentModal } from '@/components/features/ConnectAgentModal';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { Settings, Laptop, Trash2, KeyRound, Check, Moon, Sun, Info, Clock } from 'lucide-react';
+import { useAuth } from '@/components/layout/AuthContext';
+import { Settings, Laptop, Trash2, KeyRound, Check, Moon, Sun, Info, Clock, User, ShieldCheck, LogOut, Copy } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 
 interface DeviceItem {
@@ -19,6 +20,7 @@ interface DeviceItem {
 }
 
 export default function SettingsPage() {
+  const { user, logout } = useAuth();
   const [devices, setDevices] = useState<DeviceItem[]>([]);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [isDark, setIsDark] = useState(false);
@@ -28,6 +30,7 @@ export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [copiedEmail, setCopiedEmail] = useState(false);
 
   useEffect(() => {
     fetchDevices();
@@ -192,6 +195,72 @@ export default function SettingsPage() {
             {saveError}
           </div>
         )}
+
+        {/* Account & Login Session Details */}
+        <Card id="account" className="border-border/80">
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
+            <div>
+              <CardTitle className="text-base font-bold flex items-center gap-2">
+                <User className="h-4 w-4 text-brand-500" />
+                <span>Account &amp; Login Details</span>
+              </CardTitle>
+              <CardDescription className="text-xs mt-0.5">
+                Active operator profile, role permissions, and signed session identity.
+              </CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={logout}
+              className="gap-1.5 text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-500/10"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              <span>Sign Out</span>
+            </Button>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div className="p-3 rounded-lg bg-muted/40 border border-border/60">
+              <span className="text-[10px] text-muted-foreground uppercase font-semibold block">Full Name</span>
+              <span className="font-semibold text-foreground text-sm mt-0.5 block">{user?.name || 'Administrator'}</span>
+            </div>
+
+            <div className="p-3 rounded-lg bg-muted/40 border border-border/60 flex items-center justify-between gap-2">
+              <div className="overflow-hidden">
+                <span className="text-[10px] text-muted-foreground uppercase font-semibold block">Login Email / Username</span>
+                <span className="font-mono font-semibold text-foreground text-xs mt-0.5 block truncate">{user?.email || '—'}</span>
+              </div>
+              {user?.email && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(user.email);
+                    setCopiedEmail(true);
+                    setTimeout(() => setCopiedEmail(false), 2000);
+                  }}
+                  className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+                  title="Copy login email"
+                >
+                  {copiedEmail ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                </button>
+              )}
+            </div>
+
+            <div className="p-3 rounded-lg bg-muted/40 border border-border/60">
+              <span className="text-[10px] text-muted-foreground uppercase font-semibold block">Account ID</span>
+              <span className="font-mono text-foreground text-xs mt-0.5 block">{user?.id || '—'}</span>
+            </div>
+
+            <div className="p-3 rounded-lg bg-muted/40 border border-border/60 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] text-muted-foreground uppercase font-semibold block">Role &amp; Session Security</span>
+                <span className="font-semibold text-foreground mt-0.5 flex items-center gap-1.5">
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
+                  <span>{user?.role || 'ADMIN'} &bull; HMAC-SHA256 HttpOnly Cookie</span>
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Connected Windows Hosts */}
         <Card className="border-border/80">

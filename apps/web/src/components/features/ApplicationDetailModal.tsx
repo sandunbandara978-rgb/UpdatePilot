@@ -5,7 +5,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
 import { ApplicationEntity, ReleaseMetadataEntity, SecurityFindingEntity } from '@updatepilot/shared';
 import { formatDate } from '@/lib/utils';
-import { ExternalLink, ShieldCheck, FileText, CheckCircle2, AlertTriangle, Layers } from 'lucide-react';
+import { ExternalLink, ShieldCheck, FileText } from 'lucide-react';
 
 interface ApplicationDetailModalProps {
   isOpen: boolean;

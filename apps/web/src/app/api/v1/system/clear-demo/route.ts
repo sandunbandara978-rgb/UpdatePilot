@@ -12,7 +12,8 @@ export async function POST(req: NextRequest) {
       return jsonError('Authentication required.', 'UNAUTHORIZED', 401);
     }
 
-    const removed = (memoryStore as any)?.clearDemoFixture ? (memoryStore as any).clearDemoFixture() : false;
+    const store = memoryStore as { clearDemoFixture?: () => boolean };
+    const removed = typeof store.clearDemoFixture === 'function' ? store.clearDemoFixture() : false;
     return jsonSuccess({ cleared: removed, message: 'Demo fixture data removed.' });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

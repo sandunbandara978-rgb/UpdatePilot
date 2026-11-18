@@ -5,7 +5,7 @@ import { Navbar } from '@/components/layout/Navbar';
 import { OutdatedSoftwareHub } from '@/components/features/OutdatedSoftwareHub';
 import { ConnectAgentModal } from '@/components/features/ConnectAgentModal';
 import { useDeviceContext } from '@/components/layout/DeviceContext';
-import { ShieldCheck, Sparkles } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 
 export default function UpdatesPage() {
   const { devices, selectedDeviceId, setSelectedDeviceId, refreshDevices } = useDeviceContext();
@@ -45,6 +45,7 @@ export default function UpdatesPage() {
           selectedDeviceId={selectedDeviceId}
           onDeviceChange={setSelectedDeviceId}
           onUpdated={refreshDevices}
+          onConnectAgentClick={() => setIsConnectModalOpen(true)}
         />
       </div>
 

@@ -268,21 +268,26 @@ export class MemoryStore {
   private seedDefaults(): void {
     this.seedDefaultUser();
 
-    const hostname = os.hostname();
-    const osVersion = `${os.type()} ${os.release()} (${os.arch()})`;
-    const hostDeviceId = `dev_${hostname.toLowerCase().replace(/[^a-z0-9_]/g, '_')}`;
+    // Only register the host server itself when running natively on Windows.
+    // Cloud/Linux hosts (e.g. Vercel) must wait for real paired Windows agents instead of
+    // displaying a bogus 0-app host that makes dashboards claim "All Software Is Up To Date".
+    if (process.platform === 'win32') {
+      const hostname = os.hostname();
+      const osVersion = `${os.type()} ${os.release()} (${os.arch()})`;
+      const hostDeviceId = `dev_${hostname.toLowerCase().replace(/[^a-z0-9_]/g, '_')}`;
 
-    const hostDev: DeviceEntity = {
-      id: hostDeviceId,
-      userId: 'usr_default_admin',
-      deviceName: hostname,
-      osVersion,
-      agentVersion: '1.0.0',
-      status: 'ONLINE',
-      lastSeenAt: new Date().toISOString(),
-      createdAt: new Date().toISOString(),
-    };
-    this.devices.set(hostDev.id, hostDev);
+      const hostDev: DeviceEntity = {
+        id: hostDeviceId,
+        userId: 'usr_default_admin',
+        deviceName: hostname,
+        osVersion,
+        agentVersion: '1.0.0 (Local Engine)',
+        status: 'ONLINE',
+        lastSeenAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+      };
+      this.devices.set(hostDev.id, hostDev);
+    }
   }
 }
 
@@ -652,7 +657,7 @@ export class MemoryJobRepository implements IJobRepository {
     return job;
   }
 
-  async pollPendingJob(deviceId: string): Promise<{ id: string; type: 'SCAN' | 'UPDATE'; payload: any } | null> {
+  async pollPendingJob(deviceId: string): Promise<{ id: string; type: 'SCAN' | 'UPDATE'; payload: Record<string, unknown> } | null> {
     for (const job of Array.from(memoryStore.updateJobs.values())) {
       if (job.deviceId === deviceId && job.status === 'QUEUED') {
         return {

@@ -67,7 +67,7 @@ export function BatchUpdateProgressModal({
 
     setItems(initialItems);
     setCurrentIndex(0);
-    setIsConfirmed(false);
+    setIsConfirmed(appsToUpdate.length === 1);
     setHasStarted(false);
     setIsProcessing(false);
     setIsPaused(false);
@@ -277,6 +277,7 @@ export function BatchUpdateProgressModal({
     return () => {
       isSubscribed = false;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasStarted, currentIndex, isProcessing, isPaused, items.length, onAllCompleted]);
 
   if (!isOpen) return null;

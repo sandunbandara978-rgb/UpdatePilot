@@ -4,22 +4,19 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { Navbar } from '@/components/layout/Navbar';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
+
 import { Button } from '@/components/ui/Button';
 import { ConnectAgentModal } from '@/components/features/ConnectAgentModal';
 import { useDeviceContext } from '@/components/layout/DeviceContext';
-import { formatDate, formatRelativeTime } from '@/lib/utils';
+import { formatRelativeTime } from '@/lib/utils';
 import {
   Laptop,
   RefreshCw,
   Plus,
   Trash2,
   CheckCircle2,
-  AlertCircle,
-  ExternalLink,
   Layers,
   ArrowUpCircle,
-  Clock,
   Sparkles,
 } from 'lucide-react';
 

@@ -16,11 +16,7 @@ import {
   RefreshCw,
   Sparkles,
   Laptop,
-  Terminal,
-  ShieldCheck,
   Search,
-  Filter,
-  Layers,
   CheckSquare,
   Square,
   RotateCw,
@@ -34,6 +30,11 @@ interface OutdatedSoftwareHubProps {
   onDeviceChange?: (deviceId: string) => void;
   onUpdated?: () => void;
   compactView?: boolean;
+  totalApplications?: number;
+  supportsLocalWinGet?: boolean;
+  storageMode?: string;
+  onConnectAgentClick?: () => void;
+  onRunDiscoveryClick?: () => void;
 }
 
 interface ActiveJobInfo {
@@ -51,18 +52,24 @@ export function OutdatedSoftwareHub({
   selectedDeviceId = 'ALL',
   onDeviceChange,
   onUpdated,
-  compactView = false,
+  compactView: _compactView = false,
+  totalApplications,
+  supportsLocalWinGet,
+  storageMode,
+  onConnectAgentClick,
+  onRunDiscoveryClick,
 }: OutdatedSoftwareHubProps) {
   const [updates, setUpdates] = useState<ApplicationEntity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedAppIds, setSelectedAppIds] = useState<Set<string>>(new Set());
+  const [fetchedTotalApps, setFetchedTotalApps] = useState<number>(0);
+  const [fetchedSupportsWinGet, setFetchedSupportsWinGet] = useState<boolean>(true);
+  const [fetchedStorageMode, setFetchedStorageMode] = useState<string>('disk');
 
   // Active update tracking & live percentages
   const [activeJobs, setActiveJobs] = useState<Record<string, ActiveJobInfo>>({}); // keyed by applicationId
   const [jobPercentages, setJobPercentages] = useState<Record<string, number>>({});
-  const [updatingAppId, setUpdatingAppId] = useState<string | null>(null);
-  const [batchUpdating, setBatchUpdating] = useState(false);
   const [actionMessage, setActionMessage] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
 
   // Modals state
@@ -81,21 +88,52 @@ export function OutdatedSoftwareHub({
   const fetchUpdates = useCallback(async () => {
     setIsLoading(true);
     try {
-      const url =
+      const updatesUrl =
         selectedDeviceId && selectedDeviceId !== 'ALL'
           ? `/api/v1/updates?deviceId=${selectedDeviceId}`
           : '/api/v1/updates';
-      const res = await fetch(url);
+      const dashUrl =
+        selectedDeviceId && selectedDeviceId !== 'ALL'
+          ? `/api/v1/dashboard?deviceId=${selectedDeviceId}`
+          : '/api/v1/dashboard';
+
+      const [res, dashRes, healthRes] = await Promise.all([
+        fetch(updatesUrl),
+        totalApplications === undefined ? fetch(dashUrl) : Promise.resolve(null),
+        supportsLocalWinGet === undefined ? fetch('/api/v1/health') : Promise.resolve(null),
+      ]);
+
       const data = await res.json();
       if (data.success) {
         setUpdates(data.data.updates);
+      }
+
+      if (dashRes) {
+        const dashData = await dashRes.json();
+        if (dashData.success && dashData.data) {
+          setFetchedTotalApps(dashData.data.totalApplications ?? 0);
+        }
+      }
+
+      if (healthRes) {
+        const healthData = await healthRes.json();
+        if (healthData.success && healthData.data) {
+          setFetchedSupportsWinGet(Boolean(healthData.data.supportsLocalWinGet));
+          if (healthData.data.storageMode) {
+            setFetchedStorageMode(healthData.data.storageMode);
+          }
+        }
       }
     } catch (err) {
       console.error('Failed to load outdated software:', err);
     } finally {
       setIsLoading(false);
     }
-  }, [selectedDeviceId]);
+  }, [selectedDeviceId, totalApplications, supportsLocalWinGet]);
+
+  const effectiveTotalApps = totalApplications ?? fetchedTotalApps;
+  const effectiveSupportsWinGet = supportsLocalWinGet ?? fetchedSupportsWinGet;
+  const effectiveStorageMode = storageMode ?? fetchedStorageMode;
 
   useEffect(() => {
     fetchUpdates();
@@ -205,13 +243,12 @@ export function OutdatedSoftwareHub({
       {/* Action Notification Banner */}
       {actionMessage && (
         <div
-          className={`p-3.5 rounded-2xl border text-xs flex items-center justify-between gap-3 transition-all ${
-            actionMessage.type === 'success'
-              ? 'bg-[#34c759]/10 border-[#34c759]/20 text-[#28a745] dark:text-[#34c759]'
-              : actionMessage.type === 'error'
+          className={`p-3.5 rounded-2xl border text-xs flex items-center justify-between gap-3 transition-all ${actionMessage.type === 'success'
+            ? 'bg-[#34c759]/10 border-[#34c759]/20 text-[#28a745] dark:text-[#34c759]'
+            : actionMessage.type === 'error'
               ? 'bg-[#ff3b30]/10 border-[#ff3b30]/20 text-[#d32f2f] dark:text-[#ff453a]'
               : 'bg-[#0071e3]/10 border-[#0071e3]/20 text-[#0071e3] dark:text-[#2997ff]'
-          }`}
+            }`}
         >
           <div className="flex items-center gap-2">
             {actionMessage.type === 'success' ? (
@@ -335,19 +372,72 @@ export function OutdatedSoftwareHub({
               <span>Checking for verified upstream software updates...</span>
             </div>
           ) : filteredUpdates.length === 0 ? (
-            <div className="py-12 px-6 text-center space-y-3">
-              <div className="mx-auto h-12 w-12 rounded-full bg-[#34c759]/10 text-[#34c759] flex items-center justify-center">
-                <CheckCircle2 className="h-6 w-6" />
+            search ? (
+              <div className="py-12 px-6 text-center space-y-3">
+                <div className="mx-auto h-12 w-12 rounded-full bg-muted text-muted-foreground flex items-center justify-center">
+                  <Search className="h-6 w-6" />
+                </div>
+                <h4 className="font-bold text-foreground text-sm">No Outdated Software Matched Search</h4>
+                <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                  No applications matching &quot;{search}&quot; currently have pending updates.
+                </p>
               </div>
-              <h4 className="font-bold text-foreground text-sm">
-                {search ? 'No Outdated Software Matched Search' : 'All Software Is Up To Date!'}
-              </h4>
-              <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                {search
-                  ? `No applications matching "${search}" currently have pending updates.`
-                  : 'All verified applications on the selected host(s) are currently on their latest releases.'}
-              </p>
-            </div>
+            ) : devices.length === 0 || effectiveTotalApps === 0 ? (
+              <div className="py-12 px-6 text-center space-y-3">
+                <div className="mx-auto h-12 w-12 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center">
+                  <AlertTriangle className="h-6 w-6" />
+                </div>
+                <h4 className="font-bold text-foreground text-sm">
+                  {devices.length === 0
+                    ? 'No Windows Host Connected Yet'
+                    : 'No Software Inventory Scanned Yet (0 Apps Found)'}
+                </h4>
+                <p className="text-xs text-muted-foreground max-w-lg mx-auto leading-relaxed">
+                  {!effectiveSupportsWinGet
+                    ? 'This dashboard is running on a cloud server (Linux) and cannot inspect your local PC apps directly. Install or run the UpdatePilot Windows Agent on your Windows computer to scan WinGet packages and report real outdated apps here.'
+                    : 'Run a WinGet discovery scan on your host computer to inspect installed software and detect available updates.'}
+                </p>
+                {effectiveStorageMode === 'ephemeral-memory' && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400 max-w-lg mx-auto font-medium">
+                    Note: DATABASE_URL is not configured in Vercel yet. Configure a PostgreSQL database (Neon / Supabase / Vercel Postgres) so paired devices and scan results persist across cloud requests.
+                  </p>
+                )}
+                <div className="pt-1 flex items-center justify-center gap-2">
+                  {!effectiveSupportsWinGet && onConnectAgentClick && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={onConnectAgentClick}
+                      className="gap-1.5 text-xs rounded-full bg-[#0071e3] hover:bg-[#0077ed] text-white"
+                    >
+                      <Laptop className="h-3.5 w-3.5" />
+                      <span>Pair Windows Computer</span>
+                    </Button>
+                  )}
+                  {effectiveSupportsWinGet && onRunDiscoveryClick && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={onRunDiscoveryClick}
+                      className="gap-1.5 text-xs rounded-full bg-[#0071e3] hover:bg-[#0077ed] text-white"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      <span>Run WinGet Scan Now</span>
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="py-12 px-6 text-center space-y-3">
+                <div className="mx-auto h-12 w-12 rounded-full bg-[#34c759]/10 text-[#34c759] flex items-center justify-center">
+                  <CheckCircle2 className="h-6 w-6" />
+                </div>
+                <h4 className="font-bold text-foreground text-sm">All Software Is Up To Date!</h4>
+                <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                  All {effectiveTotalApps} verified applications on the selected host(s) are currently on their latest releases.
+                </p>
+              </div>
+            )
           ) : (
             <div className="divide-y divide-black/[0.04] dark:divide-white/[0.06]">
               {/* Table Header Bar */}
@@ -376,7 +466,6 @@ export function OutdatedSoftwareHub({
                 const activeJob = activeJobs[app.id];
                 const currentPercent = jobPercentages[app.id] || 35;
                 const isUpdatingThis =
-                  updatingAppId === app.id ||
                   activeJob?.status === 'RUNNING' ||
                   activeJob?.status === 'VERIFYING' ||
                   activeJob?.status === 'QUEUED';
@@ -385,9 +474,8 @@ export function OutdatedSoftwareHub({
                 return (
                   <div
                     key={app.id}
-                    className={`p-4 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4 ${
-                      isSelected ? 'bg-[#0071e3]/[0.03]' : 'hover:bg-neutral-50/60 dark:hover:bg-neutral-900/30'
-                    }`}
+                    className={`p-4 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4 ${isSelected ? 'bg-[#0071e3]/[0.03]' : 'hover:bg-neutral-50/60 dark:hover:bg-neutral-900/30'
+                      }`}
                   >
                     {/* Checkbox and App Info */}
                     <div className="flex items-start gap-3 min-w-0">

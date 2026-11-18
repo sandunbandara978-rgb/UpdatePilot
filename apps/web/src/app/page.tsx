@@ -11,7 +11,7 @@ import { OverviewCharts } from '@/components/features/OverviewCharts';
 import { OutdatedSoftwareHub } from '@/components/features/OutdatedSoftwareHub';
 import { useDeviceContext } from '@/components/layout/DeviceContext';
 import { DashboardMetrics } from '@updatepilot/shared';
-import { formatDate, formatRelativeTime } from '@/lib/utils';
+import { formatRelativeTime } from '@/lib/utils';
 import {
   Layers,
   ArrowUpCircle,
@@ -19,10 +19,8 @@ import {
   AlertCircle,
   Laptop,
   RefreshCw,
-  ExternalLink,
   ShieldCheck,
   Activity,
-  Sparkles,
   Server,
   ArrowRight,
 } from 'lucide-react';
@@ -33,6 +31,8 @@ export default function DashboardOverviewPage() {
   const [isScanning, setIsScanning] = useState(false);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
+  const [supportsLocalWinGet, setSupportsLocalWinGet] = useState<boolean>(true);
+  const [storageMode, setStorageMode] = useState<string>('disk');
 
   const { devices, selectedDeviceId, setSelectedDeviceId, activeDevice, refreshDevices } = useDeviceContext();
 
@@ -65,14 +65,25 @@ export default function DashboardOverviewPage() {
     if (!silent) setIsScanning(true);
     if (!silent) setScanMessage(null);
     try {
-      if (silent) {
-        const healthRes = await fetch('/api/v1/health');
-        const healthData = await healthRes.json();
-        if (healthData.success && healthData.data?.supportsLocalWinGet === false) {
-          await refreshDevices();
-          await fetchDashboardData();
-          return;
+      const healthRes = await fetch('/api/v1/health');
+      const healthData = await healthRes.json();
+      const canRunLocalWinGet = !(healthData.success && healthData.data?.supportsLocalWinGet === false);
+      if (healthData.success && healthData.data) {
+        setSupportsLocalWinGet(Boolean(healthData.data.supportsLocalWinGet));
+        if (healthData.data.storageMode) {
+          setStorageMode(healthData.data.storageMode);
         }
+      }
+
+      if (!canRunLocalWinGet) {
+        await refreshDevices();
+        await fetchDashboardData();
+        if (!silent) {
+          setScanMessage(
+            'Cloud host cannot run WinGet locally. Pair a Windows Desktop Agent to scan your PC.'
+          );
+        }
+        return;
       }
 
       const res = await fetch('/api/v1/system/scan-local', { method: 'POST' });
@@ -109,7 +120,32 @@ export default function DashboardOverviewPage() {
     setIsScanning(true);
     setScanMessage(null);
     try {
-      // Local host (or All): run real-time dual winget scan
+      if (!supportsLocalWinGet) {
+        if (selectedDeviceId !== 'ALL' && activeDevice) {
+          await fetch(`/api/v1/devices/${selectedDeviceId}/scans`, { method: 'POST' });
+          setScanMessage(`Scan job queued for ${activeDevice.deviceName}. Ensure the Windows Agent service is running on that PC.`);
+          await refreshDevices();
+          await fetchDashboardData();
+          return;
+        }
+
+        const onlineHosts = devices.filter((d) => d.status === 'ONLINE');
+        if (onlineHosts.length > 0) {
+          await Promise.all(
+            onlineHosts.map((d) => fetch(`/api/v1/devices/${d.id}/scans`, { method: 'POST' }))
+          );
+          setScanMessage(`Queued discovery scan jobs on ${onlineHosts.length} connected Windows host(s).`);
+          await refreshDevices();
+          await fetchDashboardData();
+          return;
+        }
+
+        setScanMessage('No Windows host is connected yet. Pair a Windows Desktop Agent to scan installed software.');
+        setIsConnectModalOpen(true);
+        return;
+      }
+
+      // Local Windows host (or All): run real-time dual winget scan
       if (
         selectedDeviceId === 'ALL' ||
         selectedDeviceId.startsWith('dev_local_') ||
@@ -146,6 +182,33 @@ export default function DashboardOverviewPage() {
           <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
             <span>{scanMessage}</span>
+          </div>
+        )}
+
+        {!supportsLocalWinGet && !isLoading && (devices.length === 0 || (metrics?.totalApplications ?? 0) === 0) && (
+          <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/25 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5 text-amber-800 dark:text-amber-300">
+              <AlertCircle className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <span className="font-bold block">
+                  Cloud Dashboard Active — Waiting for Windows Agent Scan
+                </span>
+                <p className="text-[11px] leading-relaxed">
+                  This server runs in the cloud (Linux/Vercel) and cannot scan your local Windows WinGet packages directly. Pair and run the UpdatePilot Windows Agent on your Windows PC to view real installed software and pending updates here.
+                  {storageMode === 'ephemeral-memory' &&
+                    ' Also set DATABASE_URL (PostgreSQL) in Vercel Environment Variables so device inventory persists across requests.'}
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setIsConnectModalOpen(true)}
+              className="gap-1.5 shrink-0 text-xs"
+            >
+              <Laptop className="h-3.5 w-3.5" />
+              <span>Pair Windows PC</span>
+            </Button>
           </div>
         )}
 
@@ -229,7 +292,9 @@ export default function DashboardOverviewPage() {
                 {isLoading ? '—' : metrics?.upToDate ?? 0}
               </div>
               <p className="text-[11px] text-muted-foreground mt-1">
-                Matching verified latest versions
+                {(metrics?.totalApplications ?? 0) === 0
+                  ? 'No applications scanned yet'
+                  : 'Matching verified latest versions'}
               </p>
             </CardContent>
           </Card>
@@ -257,6 +322,11 @@ export default function DashboardOverviewPage() {
           devices={devices}
           selectedDeviceId={selectedDeviceId}
           onDeviceChange={setSelectedDeviceId}
+          totalApplications={metrics?.totalApplications}
+          supportsLocalWinGet={supportsLocalWinGet}
+          storageMode={storageMode}
+          onConnectAgentClick={() => setIsConnectModalOpen(true)}
+          onRunDiscoveryClick={handleScanNow}
           onUpdated={async () => {
             await refreshDevices();
             await fetchDashboardData();
@@ -292,9 +362,8 @@ export default function DashboardOverviewPage() {
                     </span>
                   </div>
                   <span
-                    className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${
-                      dev.status === 'ONLINE' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
-                    }`}
+                    className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${dev.status === 'ONLINE' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
+                      }`}
                     title={dev.status}
                   />
                 </div>

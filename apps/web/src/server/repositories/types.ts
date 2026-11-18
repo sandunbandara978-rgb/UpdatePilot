@@ -87,7 +87,7 @@ export interface IJobRepository {
     currentVersion: string;
     targetVersion: string;
   }): Promise<UpdateJobEntity>;
-  pollPendingJob(deviceId: string): Promise<{ id: string; type: 'SCAN' | 'UPDATE'; payload: any } | null>;
+  pollPendingJob(deviceId: string): Promise<{ id: string; type: 'SCAN' | 'UPDATE'; payload: Record<string, unknown> } | null>;
   claimJob(id: string, type: 'SCAN' | 'UPDATE', deviceId?: string): Promise<boolean>;
   updateScanJob(id: string, data: Partial<ScanJobEntity>): Promise<void>;
   updateUpdateJob(id: string, data: Partial<UpdateJobEntity>): Promise<void>;

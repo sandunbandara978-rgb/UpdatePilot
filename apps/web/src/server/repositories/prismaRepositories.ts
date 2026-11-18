@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '../db';
 import {
   ApplicationEntity,
@@ -219,7 +220,7 @@ export class PrismaDeviceRepository implements IDeviceRepository {
       osVersion: d.osVersion,
       osBuild: d.osBuild || undefined,
       agentVersion: d.agentVersion,
-      status: d.status as any,
+      status: d.status as DeviceEntity['status'],
       lastSeenAt: d.lastSeenAt.toISOString(),
       createdAt: d.createdAt.toISOString(),
     };
@@ -241,7 +242,7 @@ export class PrismaDeviceRepository implements IDeviceRepository {
       osVersion: d.osVersion,
       osBuild: d.osBuild || undefined,
       agentVersion: d.agentVersion,
-      status: d.status as any,
+      status: d.status as DeviceEntity['status'],
       lastSeenAt: d.lastSeenAt.toISOString(),
       createdAt: d.createdAt.toISOString(),
     };
@@ -260,7 +261,7 @@ export class PrismaDeviceRepository implements IDeviceRepository {
       osVersion: d.osVersion,
       osBuild: d.osBuild || undefined,
       agentVersion: d.agentVersion,
-      status: d.status as any,
+      status: d.status as DeviceEntity['status'],
       lastSeenAt: d.lastSeenAt.toISOString(),
       createdAt: d.createdAt.toISOString(),
     }));
@@ -285,7 +286,7 @@ export class PrismaDeviceRepository implements IDeviceRepository {
       osVersion: d.osVersion,
       osBuild: d.osBuild || undefined,
       agentVersion: d.agentVersion,
-      status: d.status as any,
+      status: d.status as DeviceEntity['status'],
       lastSeenAt: d.lastSeenAt.toISOString(),
       createdAt: d.createdAt.toISOString(),
     };
@@ -293,7 +294,7 @@ export class PrismaDeviceRepository implements IDeviceRepository {
 
   async update(id: string, data: Partial<DeviceEntity>): Promise<DeviceEntity> {
     const db = getPrisma();
-    const updateData: any = {};
+    const updateData: Prisma.DeviceUpdateInput = {};
     if (data.deviceName) updateData.deviceName = data.deviceName;
     if (data.osVersion) updateData.osVersion = data.osVersion;
     if (data.osBuild) updateData.osBuild = data.osBuild;
@@ -313,7 +314,7 @@ export class PrismaDeviceRepository implements IDeviceRepository {
       osVersion: d.osVersion,
       osBuild: d.osBuild || undefined,
       agentVersion: d.agentVersion,
-      status: d.status as any,
+      status: d.status as DeviceEntity['status'],
       lastSeenAt: d.lastSeenAt.toISOString(),
       createdAt: d.createdAt.toISOString(),
     };
@@ -429,7 +430,7 @@ export class PrismaApplicationRepository implements IApplicationRepository {
     sortOrder: 'asc' | 'desc';
   }): Promise<{ items: ApplicationEntity[]; total: number }> {
     const db = getPrisma();
-    const where: any = {};
+    const where: Prisma.ApplicationWhereInput = {};
     if (params.deviceId) {
       where.deviceId = params.deviceId;
     } else if (params.deviceIds) {
@@ -444,9 +445,9 @@ export class PrismaApplicationRepository implements IApplicationRepository {
       ];
     }
 
-    const orderBy: any = {};
+    const orderBy: Prisma.ApplicationOrderByWithRelationInput = {};
     const sortField = ['name', 'publisher', 'installedVersion', 'status', 'lastScannedAt'].includes(params.sortBy)
-      ? params.sortBy
+      ? (params.sortBy as keyof Prisma.ApplicationOrderByWithRelationInput)
       : 'name';
     orderBy[sortField] = params.sortOrder;
 
@@ -566,7 +567,7 @@ export class PrismaApplicationRepository implements IApplicationRepository {
     availableVersion?: string | null
   ): Promise<ApplicationEntity> {
     const db = getPrisma();
-    const updateData: any = { status, lastScannedAt: new Date() };
+    const updateData: Prisma.ApplicationUpdateInput = { status, lastScannedAt: new Date() };
     if (installedVersion) updateData.installedVersion = installedVersion;
     if (availableVersion !== undefined) updateData.availableVersion = availableVersion;
 
@@ -678,7 +679,7 @@ export class PrismaJobRepository implements IJobRepository {
     };
   }
 
-  async pollPendingJob(deviceId: string): Promise<{ id: string; type: 'SCAN' | 'UPDATE'; payload: any } | null> {
+  async pollPendingJob(deviceId: string): Promise<{ id: string; type: 'SCAN' | 'UPDATE'; payload: Record<string, unknown> } | null> {
     const db = getPrisma();
     const updateJob = await db.updateJob.findFirst({
       where: { deviceId, status: 'QUEUED' },
@@ -716,7 +717,7 @@ export class PrismaJobRepository implements IJobRepository {
 
   async claimJob(id: string, type: 'SCAN' | 'UPDATE', deviceId?: string): Promise<boolean> {
     const db = getPrisma();
-    const whereClause: any = { id, status: 'QUEUED' };
+    const whereClause: { id: string; status: string; deviceId?: string } = { id, status: 'QUEUED' };
     if (deviceId) {
       whereClause.deviceId = deviceId;
     }
@@ -738,7 +739,7 @@ export class PrismaJobRepository implements IJobRepository {
 
   async updateScanJob(id: string, data: Partial<ScanJobEntity>): Promise<void> {
     const db = getPrisma();
-    const updateData: any = {};
+    const updateData: Prisma.ScanJobUpdateInput = {};
     if (data.status) updateData.status = data.status;
     if (data.appsDiscovered !== undefined) updateData.appsDiscovered = data.appsDiscovered;
     if (data.updatesDetected !== undefined) updateData.updatesDetected = data.updatesDetected;
@@ -754,7 +755,7 @@ export class PrismaJobRepository implements IJobRepository {
 
   async updateUpdateJob(id: string, data: Partial<UpdateJobEntity>): Promise<void> {
     const db = getPrisma();
-    const updateData: any = {};
+    const updateData: Prisma.UpdateJobUpdateInput = {};
     if (data.status) updateData.status = data.status;
     if (data.exitCode !== undefined) updateData.exitCode = data.exitCode;
     if (data.executionOutput !== undefined) updateData.executionOutput = data.executionOutput;
@@ -874,7 +875,7 @@ export class PrismaAuditRepository implements IAuditRepository {
         eventType: event.eventType,
         action: event.action,
         target: event.target,
-        metadata: (event.metadata as any) ?? {},
+        metadata: (event.metadata ?? {}) as Prisma.InputJsonValue,
         ipAddress: event.ipAddress,
       },
     });
@@ -892,10 +893,10 @@ export class PrismaAuditRepository implements IAuditRepository {
       id: e.id,
       userId: e.userId || undefined,
       deviceId: e.deviceId || undefined,
-      eventType: e.eventType as any,
+      eventType: e.eventType as AuditEventEntity['eventType'],
       action: e.action,
       target: e.target,
-      metadata: (e.metadata as any) || undefined,
+      metadata: (e.metadata as Record<string, unknown> | null) || undefined,
       ipAddress: e.ipAddress || undefined,
       createdAt: e.createdAt.toISOString(),
     }));
@@ -960,7 +961,7 @@ export class PrismaSecurityRepository implements ISecurityRepository {
       packageId: s.packageId,
       cveId: s.cveId,
       summary: s.summary,
-      severity: s.severity as any,
+      severity: s.severity as SecurityFindingEntity['severity'],
       affectedVersions: s.affectedVersions,
       fixedVersion: s.fixedVersion || undefined,
       advisoryUrl: s.advisoryUrl || undefined,
@@ -980,7 +981,7 @@ export class PrismaSecurityRepository implements ISecurityRepository {
       packageId: s.packageId,
       cveId: s.cveId,
       summary: s.summary,
-      severity: s.severity as any,
+      severity: s.severity as SecurityFindingEntity['severity'],
       affectedVersions: s.affectedVersions,
       fixedVersion: s.fixedVersion || undefined,
       advisoryUrl: s.advisoryUrl || undefined,
@@ -998,7 +999,7 @@ export class PrismaSecurityRepository implements ISecurityRepository {
       packageId: s.packageId,
       cveId: s.cveId,
       summary: s.summary,
-      severity: s.severity as any,
+      severity: s.severity as SecurityFindingEntity['severity'],
       affectedVersions: s.affectedVersions,
       fixedVersion: s.fixedVersion || undefined,
       advisoryUrl: s.advisoryUrl || undefined,

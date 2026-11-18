@@ -32,6 +32,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch {}
 $AgentVersion = "1.0.0-pwsh"
 
 # Storage directory
@@ -148,8 +149,14 @@ function Get-WinGetApps {
         return @()
     }
 
-    $rawList = & winget list --accept-source-agreements 2>$null
-    $rawUpgrade = & winget upgrade --accept-source-agreements 2>$null
+    $prevEncoding = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        $rawList = & winget list --accept-source-agreements 2>$null
+        $rawUpgrade = & winget upgrade --accept-source-agreements 2>$null
+    } finally {
+        [Console]::OutputEncoding = $prevEncoding
+    }
 
     $installed = Parse-WinGetTable $rawList
     $upgradable = Parse-WinGetTable $rawUpgrade
@@ -312,9 +319,17 @@ if ($Service) {
                     Invoke-RestMethod -Uri "$($creds.Server)/api/v1/agent/jobs/$($job.id)/report" -Method POST -Body $runBody -ContentType "application/json" -Headers $headers | Out-Null
 
                     # Execute WinGet bound strictly to target version with interactive prompts disabled
-                    $argList = @("upgrade", "--id", $pkgId, "--version", $targetVer, "--exact", "--accept-source-agreements", "--accept-package-agreements", "--disable-interactivity")
+                    $argList = @("upgrade", "--id", $pkgId, "--version", $targetVer, "--exact", "--accept-source-agreements", "--accept-package-agreements", "--disable-interactivity", "--ignore-warnings", "--source", "winget")
                     $upgradeProcess = Start-Process -FilePath "winget" -ArgumentList $argList -NoNewWindow -Wait -PassThru
                     $exitCode = $upgradeProcess.ExitCode
+
+                    # If pinned upgrade fails, retry once with latest catalog release
+                    if ($exitCode -ne 0 -and $exitCode -ne 3010) {
+                        Write-Host "[UpdatePilot] Pinned upgrade returned code $exitCode. Retrying with latest upstream release..." -ForegroundColor Yellow
+                        $fallbackArgs = @("upgrade", "--id", $pkgId, "--exact", "--accept-source-agreements", "--accept-package-agreements", "--disable-interactivity", "--ignore-warnings", "--source", "winget")
+                        $fallbackProcess = Start-Process -FilePath "winget" -ArgumentList $fallbackArgs -NoNewWindow -Wait -PassThru
+                        $exitCode = $fallbackProcess.ExitCode
+                    }
                     $restartRequired = ($exitCode -eq 3010)
 
                     if ($exitCode -eq 0 -or $restartRequired) {
@@ -323,7 +338,7 @@ if ($Service) {
                         $verifyingBody = @{ status = "VERIFYING"; logs = "Inspecting installed software inventory to verify version change..." } | ConvertTo-Json
                         Invoke-RestMethod -Uri "$($creds.Server)/api/v1/agent/jobs/$($job.id)/report" -Method POST -Body $verifyingBody -ContentType "application/json" -Headers $headers | Out-Null
 
-                        $rawList = & winget list --id $pkgId --exact --accept-source-agreements 2>$null
+                        $rawList = & winget list --id $pkgId --exact --accept-source-agreements --ignore-warnings --source winget 2>$null
                         $actualInstalledVer = $null
 
                         if ($rawList) {

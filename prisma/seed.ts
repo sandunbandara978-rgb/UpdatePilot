@@ -48,14 +48,14 @@ async function main() {
 
   const hostDevice = await prisma.device.upsert({
     where: { id: hostDeviceId },
-    update: { lastSeenAt: new Date(), status: 'ONLINE' },
+    update: { lastSeenAt: new Date(), status: 'ONLINE', agentVersion: '1.0.0 (Local Engine)' },
     create: {
       id: hostDeviceId,
       userId: adminUser.id,
       deviceName: hostname,
       osVersion: `${os.type()} ${os.release()} (${os.arch()})`,
       osBuild: os.release(),
-      agentVersion: '1.0.0',
+      agentVersion: '1.0.0 (Local Engine)',
       status: 'ONLINE',
       lastSeenAt: new Date(),
     },

@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import {
-  Terminal,
   Copy,
   Check,
   ShieldCheck,
@@ -26,14 +25,14 @@ interface ConnectAgentModalProps {
 export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectAgentModalProps) {
   const [activeTab, setActiveTab] = useState<'network' | 'direct'>('direct');
   const [pairingCode, setPairingCode] = useState<string | null>(null);
-  const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [serverUrl, setServerUrl] = useState('http://localhost:3000');
-  const [lanIps, setLanIps] = useState<string[]>([]);
+  const [lanIps] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [localScanLoading, setLocalScanLoading] = useState(false);
+  const [supportsLocalWinGet, setSupportsLocalWinGet] = useState(true);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -41,6 +40,29 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
       setServerUrl(origin);
     }
   }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    fetch('/api/v1/health')
+      .then((r) => r.json())
+      .then((h) => {
+        if (cancelled) return;
+        const canLocal = !(h.success && h.data?.supportsLocalWinGet === false);
+        setSupportsLocalWinGet(canLocal);
+        if (!canLocal) {
+          setActiveTab('network');
+          if (!pairingCode) {
+            generateCode();
+          }
+        }
+      })
+      .catch(() => { });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
   const generateCode = async () => {
     setIsLoading(true);
@@ -50,7 +72,6 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
       const data = await res.json();
       if (data.success) {
         setPairingCode(data.data.pairingCode);
-        setExpiresAt(data.data.expiresAt);
         pollForPairing();
       }
     } catch (err) {
@@ -130,27 +151,27 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
       <div className="space-y-6">
         {!isSuccess && (
           <div className="flex border-b border-border/80 text-xs font-semibold">
-            <button
-              onClick={() => setActiveTab('direct')}
-              className={`flex items-center gap-2 pb-3 px-3 border-b-2 transition-all ${
-                activeTab === 'direct'
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Laptop className="h-4 w-4" />
-              <span>This Computer (Instant Scan)</span>
-            </button>
+            {supportsLocalWinGet && (
+              <button
+                onClick={() => setActiveTab('direct')}
+                className={`flex items-center gap-2 pb-3 px-3 border-b-2 transition-all ${activeTab === 'direct'
+                    ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+              >
+                <Laptop className="h-4 w-4" />
+                <span>This Computer (Instant Scan)</span>
+              </button>
+            )}
             <button
               onClick={() => {
                 setActiveTab('network');
                 if (!pairingCode) generateCode();
               }}
-              className={`flex items-center gap-2 pb-3 px-3 border-b-2 transition-all ${
-                activeTab === 'network'
+              className={`flex items-center gap-2 pb-3 px-3 border-b-2 transition-all ${activeTab === 'network'
                   ? 'border-brand-500 text-brand-600 dark:text-brand-400'
                   : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
+                }`}
             >
               <Network className="h-4 w-4" />
               <span>Connect Any Computer (Fleet)</span>
@@ -226,6 +247,20 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
                 )}
               </div>
             </div>
+
+            {!pairingCode && (
+              <div className="text-center py-6">
+                <Button
+                  variant="primary"
+                  onClick={generateCode}
+                  isLoading={isLoading}
+                  className="gap-2"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  <span>Generate Pairing Code</span>
+                </Button>
+              </div>
+            )}
 
             {pairingCode && (
               <div className="space-y-4">

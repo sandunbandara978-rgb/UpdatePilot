@@ -12,8 +12,6 @@ import {
   RefreshCw,
   CheckCircle2,
   AlertTriangle,
-  RotateCcw,
-  ExternalLink,
   Laptop,
 } from 'lucide-react';
 
@@ -117,7 +115,6 @@ export function LiveTerminalModal({
 
   const isCompleted = jobStatus === 'COMPLETED';
   const isFailed = jobStatus === 'FAILED';
-  const isRestartRequired = jobStatus === 'RESTART_REQUIRED';
   const isRunning = jobStatus === 'RUNNING' || jobStatus === 'VERIFYING' || jobStatus === 'QUEUED';
 
   return (
@@ -168,13 +165,12 @@ export function LiveTerminalModal({
         {/* Verification Summary Chip */}
         {verificationDetails && (
           <div
-            className={`p-3 rounded-lg border text-xs flex items-center gap-2.5 ${
-              isCompleted
+            className={`p-3 rounded-lg border text-xs flex items-center gap-2.5 ${isCompleted
                 ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-300'
                 : isFailed
-                ? 'bg-red-500/10 border-red-500/20 text-red-700 dark:text-red-300'
-                : 'bg-blue-500/10 border-blue-500/20 text-blue-700 dark:text-blue-300'
-            }`}
+                  ? 'bg-red-500/10 border-red-500/20 text-red-700 dark:text-red-300'
+                  : 'bg-blue-500/10 border-blue-500/20 text-blue-700 dark:text-blue-300'
+              }`}
           >
             {isCompleted ? (
               <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0" />
@@ -223,13 +219,13 @@ export function LiveTerminalModal({
                   <span
                     className={
                       line.toLowerCase().includes('successfully installed') ||
-                      line.toLowerCase().includes('verified')
+                        line.toLowerCase().includes('verified')
                         ? 'text-emerald-400 font-semibold'
                         : line.toLowerCase().includes('error') || line.toLowerCase().includes('fail')
-                        ? 'text-red-400 font-semibold'
-                        : line.toLowerCase().includes('downloading') || line.toLowerCase().includes('starting')
-                        ? 'text-blue-400'
-                        : 'text-slate-300'
+                          ? 'text-red-400 font-semibold'
+                          : line.toLowerCase().includes('downloading') || line.toLowerCase().includes('starting')
+                            ? 'text-blue-400'
+                            : 'text-slate-300'
                     }
                   >
                     {line}

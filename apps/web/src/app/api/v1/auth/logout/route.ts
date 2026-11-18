@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server';
 import { jsonSuccess } from '@/server/apiResponse';
 
 export async function POST() {

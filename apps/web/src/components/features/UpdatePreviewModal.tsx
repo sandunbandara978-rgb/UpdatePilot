@@ -5,7 +5,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { ApplicationEntity, JobStatus } from '@updatepilot/shared';
-import { ShieldAlert, ArrowRight, FileText, CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react';
+import { ArrowRight, FileText, AlertTriangle, ExternalLink } from 'lucide-react';
 
 interface UpdatePreviewModalProps {
   isOpen: boolean;
@@ -27,7 +27,6 @@ export function UpdatePreviewModal({ isOpen, onClose, application, onUpdateCompl
     };
   } | null>(null);
 
-  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [hasConfirmed, setHasConfirmed] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
@@ -37,9 +36,8 @@ export function UpdatePreviewModal({ isOpen, onClose, application, onUpdateCompl
   // Load preview data when opened
   useEffect(() => {
     if (isOpen && application) {
-      setIsLoadingPreview(true);
       setPreview(null);
-      setHasConfirmed(false);
+      setHasConfirmed(true);
       setActiveJobId(null);
       setJobStatus(null);
       setJobLogs(null);
@@ -50,8 +48,7 @@ export function UpdatePreviewModal({ isOpen, onClose, application, onUpdateCompl
           if (data.success) {
             setPreview(data.data);
           }
-        })
-        .finally(() => setIsLoadingPreview(false));
+        });
     }
   }, [isOpen, application]);
 
@@ -269,8 +266,8 @@ export function UpdatePreviewModal({ isOpen, onClose, application, onUpdateCompl
                   <div key={step.status} className="flex items-center gap-3 text-xs">
                     <div
                       className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold ${isStepPassed
-                          ? 'bg-emerald-500 text-white'
-                          : 'bg-muted text-muted-foreground border border-border'
+                        ? 'bg-emerald-500 text-white'
+                        : 'bg-muted text-muted-foreground border border-border'
                         }`}
                     >
                       {idx + 1}

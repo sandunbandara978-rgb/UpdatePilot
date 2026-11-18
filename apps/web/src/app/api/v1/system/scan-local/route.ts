@@ -16,7 +16,8 @@ export async function POST(req: NextRequest) {
     return jsonSuccess(result);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    const code = (err as any)?.code === 'CLOUD_SERVER_NO_LOCAL_WINGET'
+    const errCode = (err as { code?: string })?.code;
+    const code = errCode === 'CLOUD_SERVER_NO_LOCAL_WINGET'
       ? 'CLOUD_SERVER_NO_LOCAL_WINGET'
       : 'LOCAL_SCAN_ERROR';
     const status = code === 'CLOUD_SERVER_NO_LOCAL_WINGET' ? 422 : 500;

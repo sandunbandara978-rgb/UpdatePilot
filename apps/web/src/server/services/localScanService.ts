@@ -43,8 +43,8 @@ export class LocalScanService {
     if (process.platform !== 'win32') {
       const err = new Error(
         'Direct host scanning is only available when running the web server locally on Windows. On cloud/Linux deployments, pair and scan via the Windows Desktop Agent.'
-      );
-      (err as any).code = 'CLOUD_SERVER_NO_LOCAL_WINGET';
+      ) as Error & { code?: string };
+      err.code = 'CLOUD_SERVER_NO_LOCAL_WINGET';
       throw err;
     }
 
@@ -112,11 +112,13 @@ export class LocalScanService {
         status: 'ONLINE',
         lastSeenAt: new Date().toISOString(),
         osVersion,
+        agentVersion: '1.0.0 (Local Engine)',
       });
     }
 
-    if (typeof (memoryStore as any)?.clearDemoFixture === 'function') {
-      (memoryStore as any).clearDemoFixture();
+    const store = memoryStore as { clearDemoFixture?: () => boolean };
+    if (typeof store.clearDemoFixture === 'function') {
+      store.clearDemoFixture();
     }
 
     let updatesCount = 0;

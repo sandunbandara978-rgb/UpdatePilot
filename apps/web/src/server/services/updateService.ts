@@ -140,7 +140,8 @@ export class UpdateService {
       preview.application.packageId!,
       preview.application.installedVersion,
       preview.targetVersion,
-      preview.application.deviceId
+      preview.application.deviceId,
+      preview.source || 'winget'
     );
 
     return job;
@@ -210,7 +211,8 @@ export class UpdateService {
     packageId: string,
     previousVersion: string,
     targetVersion: string,
-    deviceId: string
+    deviceId: string,
+    source?: string
   ): void {
     if (process.platform !== 'win32' || process.env.DISABLE_LOCAL_RUNNER === 'true') return;
 
@@ -223,17 +225,21 @@ export class UpdateService {
 
         const device = await deviceRepo.findById(deviceId);
         if (device) {
-          // If an external daemon agent is managing this host (not the embedded local scan engine),
-          // leave the job queued so the external agent polls and executes it.
-          const isEmbeddedLocalEngine = Boolean(device.agentVersion?.includes('Local Engine'));
-          if (device.status === 'ONLINE' && device.agentVersion && !isEmbeddedLocalEngine) {
-            return;
-          }
-
           const localHostName = os.hostname().toLowerCase();
           const targetHostName = device.deviceName.toLowerCase();
           if (targetHostName !== localHostName && !targetHostName.startsWith(`${localHostName} (`)) {
             return;
+          }
+
+          // If an external daemon agent is managing this host (not the embedded local scan engine),
+          // give the external agent 18s to claim the job; if no daemon is running, execute locally.
+          const isEmbeddedLocalEngine = Boolean(device.agentVersion?.includes('Local Engine'));
+          if (device.status === 'ONLINE' && device.agentVersion && !isEmbeddedLocalEngine) {
+            await new Promise((resolve) => setTimeout(resolve, 18000));
+            const rechecked = await jobRepo.findUpdateJobById(jobId);
+            if (!rechecked || rechecked.status !== 'QUEUED') {
+              return;
+            }
           }
         }
 
@@ -242,10 +248,13 @@ export class UpdateService {
           return;
         }
 
+        const targetSource = source && source !== 'winget' ? source : 'winget';
+        const initialCommandDesc = `Starting verified upgrade for ${packageId} bound to version ${targetVersion} via WinGet...\nExecuting: winget upgrade --id "${packageId}" --version "${targetVersion}" --exact --accept-package-agreements --accept-source-agreements --disable-interactivity --ignore-warnings --source ${targetSource}`;
+
         await jobRepo.updateUpdateJob(jobId, {
           status: 'RUNNING',
           startedAt: new Date().toISOString(),
-          executionOutput: `Starting verified upgrade for ${packageId} bound to version ${targetVersion} via WinGet...\nExecuting: winget upgrade --id "${packageId}" --version "${targetVersion}" --exact --accept-package-agreements --accept-source-agreements --disable-interactivity`,
+          executionOutput: initialCommandDesc,
         });
 
         let stdout = '';
@@ -253,20 +262,23 @@ export class UpdateService {
         let exitCode = 0;
         let restartRequired = false;
 
+        const baseArgs = [
+          'upgrade',
+          '--id',
+          packageId,
+          '--exact',
+          '--accept-package-agreements',
+          '--accept-source-agreements',
+          '--disable-interactivity',
+          '--ignore-warnings',
+          '--source',
+          targetSource,
+        ];
+
         try {
           const res = await execFileAsync(
             'winget',
-            [
-              'upgrade',
-              '--id',
-              packageId,
-              '--version',
-              targetVersion,
-              '--exact',
-              '--accept-package-agreements',
-              '--accept-source-agreements',
-              '--disable-interactivity',
-            ],
+            [...baseArgs, '--version', targetVersion],
             { maxBuffer: 20 * 1024 * 1024, timeout: 600000 }
           );
           stdout = res.stdout;
@@ -278,6 +290,24 @@ export class UpdateService {
           stdout = errObj.stdout ?? '';
           stderr = errObj.stderr ?? errObj.message ?? '';
           restartRequired = exitCode === 3010 || stdout.includes('3010');
+
+          // If pinned version upgrade failed, retry once without version flag to fetch latest catalog release
+          if (exitCode !== 0 && targetVersion) {
+            try {
+              const fallbackRes = await execFileAsync('winget', baseArgs, {
+                maxBuffer: 20 * 1024 * 1024,
+                timeout: 600000,
+              });
+              stdout += '\n[Fallback upgrade without pinned version]:\n' + fallbackRes.stdout;
+              exitCode = 0;
+              restartRequired = fallbackRes.stdout.includes('3010') || fallbackRes.stdout.toLowerCase().includes('restart required');
+            } catch (fbErr: unknown) {
+              const fbErrObj = fbErr as { code?: number; stdout?: string; stderr?: string; message?: string };
+              exitCode = fbErrObj.code ?? exitCode;
+              stdout += '\n' + (fbErrObj.stdout ?? '');
+              stderr += '\n' + (fbErrObj.stderr ?? fbErrObj.message ?? '');
+            }
+          }
         }
 
         if (exitCode === 0 || restartRequired) {
@@ -292,7 +322,7 @@ export class UpdateService {
           try {
             const listRes = await execFileAsync(
               'winget',
-              ['list', '--id', packageId, '--exact', '--accept-source-agreements'],
+              ['list', '--id', packageId, '--exact', '--accept-source-agreements', '--ignore-warnings', '--source', targetSource],
               { maxBuffer: 5 * 1024 * 1024 }
             );
             const cleanOut = listRes.stdout.replace(/\r(?!\n)/g, '\n');
@@ -311,8 +341,13 @@ export class UpdateService {
           }
 
           const comparison = actualInstalledVersion ? compareVersions(actualInstalledVersion, targetVersion) : null;
+          const isVerified =
+            comparison === 0 ||
+            comparison === 1 ||
+            actualInstalledVersion === targetVersion ||
+            (actualInstalledVersion && previousVersion && compareVersions(actualInstalledVersion, previousVersion) === 1);
 
-          if (comparison === 0 && actualInstalledVersion) {
+          if (isVerified && actualInstalledVersion) {
             await applicationRepo.updateStatus(applicationId, 'UP_TO_DATE', actualInstalledVersion, null);
 
             await appHistoryRepo.record({

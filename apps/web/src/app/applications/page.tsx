@@ -2,15 +2,14 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Navbar } from '@/components/layout/Navbar';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { ApplicationDetailModal } from '@/components/features/ApplicationDetailModal';
 import { UpdatePreviewModal } from '@/components/features/UpdatePreviewModal';
 import { ConnectAgentModal } from '@/components/features/ConnectAgentModal';
 import { useDeviceContext } from '@/components/layout/DeviceContext';
-import { ApplicationEntity, ApplicationStatus } from '@updatepilot/shared';
-import { formatDate } from '@/lib/utils';
+import { ApplicationEntity } from '@updatepilot/shared';
 import {
   Search,
   Filter,
@@ -19,7 +18,6 @@ import {
   ArrowUpCircle,
   Eye,
   Download,
-  CheckCircle2,
   Laptop,
 } from 'lucide-react';
 

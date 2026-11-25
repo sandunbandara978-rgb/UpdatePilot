@@ -138,7 +138,10 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
     setTimeout(() => setIsCopied(false), 2000);
   };
 
-  const networkCommand = `Invoke-WebRequest -Uri "${serverUrl}/api/v1/agent/install" -OutFile "$env:TEMP\\UpdatePilot.ps1"; & "$env:TEMP\\UpdatePilot.ps1" -Pair ${pairingCode || 'UP-XXXXXX'} -Server "${serverUrl}" -Scan -Service`;
+  const rawFallbackScriptUrl = 'https://raw.githubusercontent.com/sandunbandara978-rgb/UpdatePilot/main/agent/UpdatePilot-Client.ps1';
+  const networkCommand = serverUrl.includes('localhost') || serverUrl.includes('127.0.0.1')
+    ? `Invoke-WebRequest -Uri "${serverUrl}/api/v1/agent/install" -OutFile "$env:TEMP\\UpdatePilot.ps1"; & "$env:TEMP\\UpdatePilot.ps1" -Pair ${pairingCode || 'UP-XXXXXX'} -Server "${serverUrl}" -Scan -Service`
+    : `Invoke-WebRequest -Uri "${rawFallbackScriptUrl}" -OutFile "$env:TEMP\\UpdatePilot.ps1"; & "$env:TEMP\\UpdatePilot.ps1" -Pair ${pairingCode || 'UP-XXXXXX'} -Server "${serverUrl}" -Scan -Service`;
 
   return (
     <Modal

@@ -399,7 +399,7 @@ export function OutdatedSoftwareHub({
                 </p>
                 {effectiveStorageMode === 'ephemeral-memory' && (
                   <p className="text-[11px] text-amber-600 dark:text-amber-400 max-w-lg mx-auto font-medium">
-                    Note: DATABASE_URL is not configured in Vercel yet. Configure a PostgreSQL database (Neon / Supabase / Vercel Postgres) so paired devices and scan results persist across cloud requests.
+                    Note: Database storage is not configured in Vercel yet. Configure Supabase (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY) or DATABASE_URL so paired devices and scan results persist across cloud requests.
                   </p>
                 )}
                 <div className="pt-1 flex items-center justify-center gap-2">

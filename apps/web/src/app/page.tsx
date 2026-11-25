@@ -196,7 +196,7 @@ export default function DashboardOverviewPage() {
                 <p className="text-[11px] leading-relaxed">
                   This server runs in the cloud (Linux/Vercel) and cannot scan your local Windows WinGet packages directly. Pair and run the UpdatePilot Windows Agent on your Windows PC to view real installed software and pending updates here.
                   {storageMode === 'ephemeral-memory' &&
-                    ' Also set DATABASE_URL (PostgreSQL) in Vercel Environment Variables so device inventory persists across requests.'}
+                    ' Also ensure your Supabase or PostgreSQL environment variables are configured in Vercel so device inventory persists across requests.'}
                 </p>
               </div>
             </div>

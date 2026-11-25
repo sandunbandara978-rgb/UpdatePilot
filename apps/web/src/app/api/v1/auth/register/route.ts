@@ -3,6 +3,7 @@ import { jsonSuccess, jsonError } from '@/server/apiResponse';
 import { SecurityAuth, SessionUser } from '@/server/security/auth';
 import { rateLimiter } from '@/server/security/rateLimiter';
 import { userRepo } from '@/server/repositories';
+import { isSupabaseConfigured, getSupabaseAdmin } from '@/lib/supabase/admin';
 import { UserRegisterSchema } from '@updatepilot/shared';
 import { z } from 'zod';
 
@@ -30,8 +31,61 @@ export async function POST(req: NextRequest) {
 
     const existingCount = await userRepo.count();
     const role = existingCount === 0 ? 'ADMIN' : 'USER';
-    const passwordHash = SecurityAuth.hashPassword(password);
 
+    // 1. If Supabase is active, register user in Supabase Auth
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = getSupabaseAdmin();
+        const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
+          email: email.toLowerCase().trim(),
+          password,
+          email_confirm: true,
+          user_metadata: { name: name.trim(), role },
+        });
+
+        if (authErr) {
+          return jsonError(authErr.message, 'SUPABASE_AUTH_ERROR', 400);
+        }
+
+        if (authData?.user) {
+          const profile = await userRepo.create({
+            id: authData.user.id,
+            email: authData.user.email || email,
+            name: name.trim(),
+            passwordHash: '',
+            role,
+          });
+
+          const sessionUser: SessionUser = {
+            id: profile.id,
+            email: profile.email,
+            name: profile.name,
+            role: role === 'ADMIN' ? 'ADMIN' : 'OPERATOR',
+          };
+
+          const sessionToken = SecurityAuth.signSessionToken(sessionUser);
+          const isHttps =
+            req.nextUrl.protocol === 'https:' ||
+            req.headers.get('x-forwarded-proto')?.split(',')[0].trim() === 'https';
+          const res = jsonSuccess({ user: sessionUser, token: sessionToken }, 201);
+
+          res.cookies.set('updatepilot_session', sessionToken, {
+            path: '/',
+            httpOnly: true,
+            secure: isHttps,
+            sameSite: 'lax',
+            maxAge: 60 * 60 * 24 * 7,
+          });
+
+          return res;
+        }
+      } catch (err) {
+        console.warn('Supabase auth sign-up error, falling back:', err);
+      }
+    }
+
+    // 2. Direct database / local fallback
+    const passwordHash = SecurityAuth.hashPassword(password);
     const created = await userRepo.create({
       email,
       name,

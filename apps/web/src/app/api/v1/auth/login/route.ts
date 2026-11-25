@@ -3,6 +3,7 @@ import { jsonSuccess, jsonError } from '@/server/apiResponse';
 import { SecurityAuth, SessionUser } from '@/server/security/auth';
 import { rateLimiter } from '@/server/security/rateLimiter';
 import { userRepo } from '@/server/repositories';
+import { isSupabaseConfigured, getSupabaseAdmin } from '@/lib/supabase/admin';
 import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
@@ -28,6 +29,63 @@ export async function POST(req: NextRequest) {
     const { email, password } = LoginSchema.parse(body);
 
     const normalized = email.toLowerCase();
+
+    // 1. If Supabase is active, authenticate via Supabase Auth
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = getSupabaseAdmin();
+        const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
+          email: normalized.includes('@') ? normalized : `${normalized}@updatepilot.local`,
+          password,
+        });
+
+        if (authData?.user && !authErr) {
+          const profile = await userRepo.findById(authData.user.id);
+          const sessionUser: SessionUser = {
+            id: authData.user.id,
+            email: authData.user.email || normalized,
+            name: profile?.name || authData.user.user_metadata?.name || normalized,
+            role: (profile?.role === 'ADMIN' ? 'ADMIN' : 'OPERATOR') as SessionUser['role'],
+          };
+
+          const sessionToken = SecurityAuth.signSessionToken(sessionUser);
+          const isHttps =
+            req.nextUrl.protocol === 'https:' ||
+            req.headers.get('x-forwarded-proto')?.split(',')[0].trim() === 'https';
+
+          const res = jsonSuccess({
+            user: sessionUser,
+            token: sessionToken,
+            supabaseAccessToken: authData.session?.access_token,
+          });
+
+          res.cookies.set('updatepilot_session', sessionToken, {
+            path: '/',
+            httpOnly: true,
+            secure: isHttps,
+            sameSite: 'lax',
+            maxAge: 60 * 60 * 24 * 7,
+          });
+
+          if (authData.session?.access_token) {
+            res.cookies.set('sb-access-token', authData.session.access_token, {
+              path: '/',
+              httpOnly: true,
+              secure: isHttps,
+              sameSite: 'lax',
+              maxAge: 60 * 60 * 24 * 7,
+            });
+          }
+
+          rateLimiter.reset(`login:${ip}`);
+          return res;
+        }
+      } catch (err) {
+        console.warn('Supabase auth sign-in error, trying database fallback:', err);
+      }
+    }
+
+    // 2. Direct user repository fallback (for bootstrap admin or Prisma/Disk mode)
     let user = await userRepo.findByEmail(normalized);
     if (!user && !normalized.includes('@')) {
       user = await userRepo.findByEmail(`${normalized}@updatepilot.local`);
@@ -54,7 +112,10 @@ export async function POST(req: NextRequest) {
       return jsonError('Invalid email/username or password.', 'INVALID_CREDENTIALS', 401);
     }
 
-    const isValid = SecurityAuth.verifyPassword(password, user.passwordHash);
+    const isValid = user.passwordHash
+      ? SecurityAuth.verifyPassword(password, user.passwordHash)
+      : password === defaultPassword;
+
     if (!isValid) {
       return jsonError('Invalid email/username or password.', 'INVALID_CREDENTIALS', 401);
     }

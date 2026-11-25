@@ -156,15 +156,46 @@ export class SecurityAuth {
 
   /**
    * Extracts and authenticates the user from the incoming NextRequest.
-   * Checks Bearer Authorization header first, then updatepilot_session cookie.
+   * Checks Bearer Authorization header first, then updatepilot_session cookie,
+   * with native support for both UpdatePilot HMAC tokens and Supabase Auth JWTs.
    */
   static getAuthenticatedUser(req: NextRequest): SessionUser | null {
     const authHeader = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim();
-    const cookieToken = req.cookies.get('updatepilot_session')?.value?.trim();
+    const cookieToken =
+      req.cookies.get('updatepilot_session')?.value?.trim() ||
+      req.cookies.get('sb-access-token')?.value?.trim();
 
     const token = authHeader || cookieToken;
     if (!token) return null;
 
-    return this.verifySessionToken(token);
+    // 1. Try standard UpdatePilot HMAC session token
+    const localUser = this.verifySessionToken(token);
+    if (localUser) return localUser;
+
+    // 2. Try Supabase Auth JWT token
+    if (token.includes('.') && token.split('.').length === 3) {
+      try {
+        const payloadBase64 = token.split('.')[1];
+        const decodedJson = Buffer.from(payloadBase64, 'base64').toString('utf-8');
+        const payload = JSON.parse(decodedJson);
+        if (payload && (payload.sub || payload.id)) {
+          const nowSec = Math.floor(Date.now() / 1000);
+          if (payload.exp && payload.exp < nowSec) {
+            return null;
+          }
+          return {
+            id: payload.sub || payload.id,
+            email: payload.email || '',
+            name: payload.user_metadata?.name || payload.name || payload.email || 'User',
+            role: (payload.user_metadata?.role || payload.role || 'OPERATOR') as SessionUser['role'],
+            exp: payload.exp ? payload.exp * 1000 : undefined,
+          };
+        }
+      } catch {
+        // Fall through
+      }
+    }
+
+    return null;
   }
 }

@@ -1,3 +1,15 @@
+import { isSupabaseConfigured } from '@/lib/supabase/admin';
+import {
+  SupabaseUserRepository,
+  SupabaseSettingsRepository,
+  SupabaseApplicationHistoryRepository,
+  SupabaseDeviceRepository,
+  SupabaseApplicationRepository,
+  SupabaseJobRepository,
+  SupabaseAuditRepository,
+  SupabaseReleaseMetadataRepository,
+  SupabaseSecurityRepository,
+} from './supabaseRepositories';
 import {
   MemoryDeviceRepository,
   MemoryApplicationRepository,
@@ -35,50 +47,72 @@ import {
 
 export * from './types';
 
-// Detect whether a live PostgreSQL connection string is configured
-const hasDatabase = Boolean(process.env.DATABASE_URL);
+// Detect persistence mode:
+// 1. Supabase (Primary when NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set)
+// 2. Direct PostgreSQL / Prisma (when DATABASE_URL is set)
+// 3. Local disk storage (fallback for standalone local development)
+const useSupabase = isSupabaseConfigured();
+const usePrisma = !useSupabase && Boolean(process.env.DATABASE_URL);
 
-if (!hasDatabase && process.env.NODE_ENV === 'production') {
+if (!useSupabase && !usePrisma && process.env.NODE_ENV === 'production') {
   console.warn(
-    'NOTICE: DATABASE_URL is not set in production. UpdatePilot is running with local disk storage (data/updatepilot-storage.json). Configure DATABASE_URL for managed PostgreSQL multi-tenant persistence.'
+    'NOTICE: Supabase or DATABASE_URL is not set in production. UpdatePilot is running with local disk storage (data/updatepilot-storage.json). Configure NEXT_PUBLIC_SUPABASE_URL & SUPABASE_SERVICE_ROLE_KEY for managed Supabase persistence.'
   );
 }
 
-// Singleton repository instances (Prisma with live DB, seamless disk-backed MemoryStore fallback)
-export const userRepo: IUserRepository = hasDatabase
-  ? new PrismaUserRepository()
-  : new MemoryUserRepository();
+// Singleton repository instances
+export const userRepo: IUserRepository = useSupabase
+  ? new SupabaseUserRepository()
+  : usePrisma
+    ? new PrismaUserRepository()
+    : new MemoryUserRepository();
 
-export const settingsRepo: ISettingsRepository = hasDatabase
-  ? new PrismaSettingsRepository()
-  : new MemorySettingsRepository();
+export const settingsRepo: ISettingsRepository = useSupabase
+  ? new SupabaseSettingsRepository()
+  : usePrisma
+    ? new PrismaSettingsRepository()
+    : new MemorySettingsRepository();
 
-export const appHistoryRepo: IApplicationHistoryRepository = hasDatabase
-  ? new PrismaApplicationHistoryRepository()
-  : new MemoryApplicationHistoryRepository();
+export const appHistoryRepo: IApplicationHistoryRepository = useSupabase
+  ? new SupabaseApplicationHistoryRepository()
+  : usePrisma
+    ? new PrismaApplicationHistoryRepository()
+    : new MemoryApplicationHistoryRepository();
 
-export const deviceRepo: IDeviceRepository = hasDatabase
-  ? new PrismaDeviceRepository()
-  : new MemoryDeviceRepository();
+export const deviceRepo: IDeviceRepository = useSupabase
+  ? new SupabaseDeviceRepository()
+  : usePrisma
+    ? new PrismaDeviceRepository()
+    : new MemoryDeviceRepository();
 
-export const applicationRepo: IApplicationRepository = hasDatabase
-  ? new PrismaApplicationRepository()
-  : new MemoryApplicationRepository();
+export const applicationRepo: IApplicationRepository = useSupabase
+  ? new SupabaseApplicationRepository()
+  : usePrisma
+    ? new PrismaApplicationRepository()
+    : new MemoryApplicationRepository();
 
-export const jobRepo: IJobRepository = hasDatabase
-  ? new PrismaJobRepository()
-  : new MemoryJobRepository();
+export const jobRepo: IJobRepository = useSupabase
+  ? new SupabaseJobRepository()
+  : usePrisma
+    ? new PrismaJobRepository()
+    : new MemoryJobRepository();
 
-export const auditRepo: IAuditRepository = hasDatabase
-  ? new PrismaAuditRepository()
-  : new MemoryAuditRepository();
+export const auditRepo: IAuditRepository = useSupabase
+  ? new SupabaseAuditRepository()
+  : usePrisma
+    ? new PrismaAuditRepository()
+    : new MemoryAuditRepository();
 
-export const releaseMetadataRepo: IReleaseMetadataRepository = hasDatabase
-  ? new PrismaReleaseMetadataRepository()
-  : new MemoryReleaseMetadataRepository();
+export const releaseMetadataRepo: IReleaseMetadataRepository = useSupabase
+  ? new SupabaseReleaseMetadataRepository()
+  : usePrisma
+    ? new PrismaReleaseMetadataRepository()
+    : new MemoryReleaseMetadataRepository();
 
-export const securityRepo: ISecurityRepository = hasDatabase
-  ? new PrismaSecurityRepository()
-  : new MemorySecurityRepository();
+export const securityRepo: ISecurityRepository = useSupabase
+  ? new SupabaseSecurityRepository()
+  : usePrisma
+    ? new PrismaSecurityRepository()
+    : new MemorySecurityRepository();
 
 export { memoryStore };

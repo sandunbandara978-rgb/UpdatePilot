@@ -1,25 +1,45 @@
 import { jsonSuccess } from '@/server/apiResponse';
 import { prisma } from '@/server/db';
+import { isSupabaseConfigured, getSupabaseAdmin } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const isVercel = Boolean(process.env.VERCEL);
+  const hasSupabase = isSupabaseConfigured();
   const hasDb = Boolean(process.env.DATABASE_URL);
 
   let dbStatus: 'connected' | 'unconfigured' | 'error' = 'unconfigured';
+  let dbProvider: 'supabase' | 'postgresql' | 'disk' | 'ephemeral-memory' = 'disk';
   let dbError: string | null = null;
 
-  if (hasDb && prisma) {
+  if (hasSupabase) {
     try {
-      // Validate active PostgreSQL connection with a lightweight probe
+      const supabase = getSupabaseAdmin();
+      const { error } = await supabase.from('profiles').select('id', { count: 'exact', head: true });
+      if (error) {
+        dbStatus = 'error';
+        dbError = error.message;
+      } else {
+        dbStatus = 'connected';
+        dbProvider = 'supabase';
+      }
+    } catch (err: unknown) {
+      dbStatus = 'error';
+      dbError = err instanceof Error ? err.message : String(err);
+    }
+  } else if (hasDb && prisma) {
+    try {
       await prisma.$queryRaw`SELECT 1`;
       dbStatus = 'connected';
+      dbProvider = 'postgresql';
     } catch (err: unknown) {
       dbStatus = 'error';
       dbError = err instanceof Error ? err.message : String(err);
       console.error('Database connection verification failed:', err);
     }
+  } else if (isVercel) {
+    dbProvider = 'ephemeral-memory';
   }
 
   return jsonSuccess({
@@ -27,10 +47,11 @@ export async function GET() {
     version: '1.0.0',
     database: {
       status: dbStatus,
-      configured: hasDb,
+      provider: dbProvider,
+      configured: hasSupabase || hasDb,
       error: dbError,
     },
-    storageMode: hasDb && dbStatus === 'connected' ? 'postgresql' : isVercel ? 'ephemeral-memory' : 'disk',
+    storageMode: dbProvider,
     platform: process.platform,
     isCloudHosted: isVercel || process.platform !== 'win32',
     supportsLocalWinGet: process.platform === 'win32',

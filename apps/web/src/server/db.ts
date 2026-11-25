@@ -7,19 +7,30 @@ declare global {
 
 let prismaInstance: PrismaClient | null = null;
 
-try {
-  if (process.env.DATABASE_URL) {
+const databaseUrl = process.env.DATABASE_URL;
+
+if (databaseUrl) {
+  try {
     if (process.env.NODE_ENV === 'production') {
-      prismaInstance = new PrismaClient();
+      prismaInstance = new PrismaClient({
+        log: ['error', 'warn'],
+      });
     } else {
       if (!global.prismaGlobal) {
-        global.prismaGlobal = new PrismaClient();
+        global.prismaGlobal = new PrismaClient({
+          log: ['query', 'error', 'warn'],
+        });
       }
       prismaInstance = global.prismaGlobal;
     }
+  } catch (err) {
+    console.error('CRITICAL: Prisma client failed to initialize with DATABASE_URL:', err);
+    throw err;
   }
-} catch (err) {
-  console.warn('Prisma client initialization notice:', err);
+} else if (process.env.NODE_ENV === 'production' && process.env.VERCEL) {
+  console.error(
+    'CRITICAL CONFIGURATION ERROR: DATABASE_URL is required on Vercel production deployment for multi-tenant PostgreSQL persistence. Without DATABASE_URL, data cannot persist across serverless invocations.'
+  );
 }
 
 export const prisma = prismaInstance;

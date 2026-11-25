@@ -1,8 +1,8 @@
 @echo off
-setlocal
+setlocal enabledelayedexpansion
 title UpdatePilot - One-Click Auto Registration
 echo ========================================================
-echo       UpdatePilot Auto-Registration & Discovery
+echo       UpdatePilot Auto-Registration and Discovery
 echo ========================================================
 echo.
 echo Connecting this computer to UpdatePilot Cloud:
@@ -20,10 +20,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "  $scriptPath = \"$env:TEMP\UpdatePilot-Client.ps1\";" ^
   "  Invoke-WebRequest -Uri \"$Server/api/v1/agent/install\" -OutFile $scriptPath;" ^
   "  Write-Host '[3/4] Registering PC and scanning installed WinGet packages...' -ForegroundColor Cyan;" ^
-  "  & $scriptPath -Pair $pairCode -Server $Server -Scan;" ^
+  "  & $scriptPath -Pair $pairCode -Server $Server;" ^
   "  Write-Host '[4/4] SUCCESS! This computer is now live on UpdatePilot!' -ForegroundColor Green;" ^
   "} catch {" ^
-  "  Write-Host ('[ERROR] Failed: ' + $_.Exception.Message) -ForegroundColor Red;" ^
+  "  if ($_.Exception.Response) {" ^
+  "    $stream = $_.Exception.Response.GetResponseStream();" ^
+  "    $reader = New-Object System.IO.StreamReader($stream);" ^
+  "    $errBody = $reader.ReadToEnd();" ^
+  "    Write-Host ('[ERROR] Server error: ' + $errBody) -ForegroundColor Red;" ^
+  "  } else {" ^
+  "    Write-Host ('[ERROR] Failed: ' + $_.Exception.Message) -ForegroundColor Red;" ^
+  "  }" ^
   "}"
 
 echo.
@@ -31,3 +38,5 @@ echo ========================================================
 echo Finished! You can now close this window.
 echo ========================================================
 pause
+
+

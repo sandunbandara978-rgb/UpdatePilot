@@ -138,7 +138,7 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
     setTimeout(() => setIsCopied(false), 2000);
   };
 
-  const networkCommand = `Invoke-WebRequest -Uri "${serverUrl}/api/v1/agent/install" -OutFile "$env:TEMP\\UpdatePilot.ps1"; & "$env:TEMP\\UpdatePilot.ps1" -Pair ${pairingCode || 'UP-XXXXXX'} -Server "${serverUrl}"`;
+  const networkCommand = `Invoke-WebRequest -Uri "${serverUrl}/api/v1/agent/install" -OutFile "$env:TEMP\\UpdatePilot.ps1"; & "$env:TEMP\\UpdatePilot.ps1" -Pair ${pairingCode || 'UP-XXXXXX'} -Server "${serverUrl}" -Scan -Service`;
 
   return (
     <Modal

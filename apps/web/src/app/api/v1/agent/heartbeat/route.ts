@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { jsonSuccess, jsonError } from '@/server/apiResponse';
+import { jsonSuccess, jsonError, jsonAgentError } from '@/server/apiResponse';
 import { deviceService } from '@/server/services/deviceService';
 import { AgentHeartbeatSchema } from '@updatepilot/shared';
 
@@ -19,7 +19,6 @@ export async function POST(req: NextRequest) {
     const result = await deviceService.handleHeartbeat(token, validated);
     return jsonSuccess(result);
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return jsonError(msg, 'HEARTBEAT_ERROR', 400);
+    return jsonAgentError(err, 'HEARTBEAT_ERROR');
   }
 }

@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { jsonSuccess, jsonError } from '@/server/apiResponse';
+import { jsonSuccess, jsonError, jsonAgentError } from '@/server/apiResponse';
 import { applicationService } from '@/server/services/applicationService';
 import { ScanSubmitPayloadSchema } from '@updatepilot/shared';
 
@@ -24,7 +24,6 @@ export async function POST(req: NextRequest) {
 
     return jsonSuccess({ acknowledged: true, appsSaved: result.appsSaved, updatesCount: result.updatesCount });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return jsonError(msg, 'SCAN_SUBMIT_ERROR', 400);
+    return jsonAgentError(err, 'SCAN_SUBMIT_ERROR');
   }
 }

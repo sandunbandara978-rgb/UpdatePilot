@@ -24,7 +24,8 @@ export interface NavbarProps {
 export function Navbar({ onScanClick, onConnectAgentClick, isScanning = false }: NavbarProps) {
   const [isDark, setIsDark] = useState(false);
   const { toggle } = useMobileNav();
-  const { devices, selectedDeviceId, setSelectedDeviceId } = useDeviceContext();
+  const { devices, selectedDeviceId, setSelectedDeviceId, thisComputerDeviceId, needsThisComputerPairing } =
+    useDeviceContext();
 
   const onlineDevices = devices.filter((d) => d.status === 'ONLINE');
   const hasOnline = onlineDevices.length > 0;
@@ -78,17 +79,27 @@ export function Navbar({ onScanClick, onConnectAgentClick, isScanning = false }:
           <div className="relative flex items-center">
             <Laptop className="absolute left-2.5 h-3.5 w-3.5 text-[#0071e3] pointer-events-none" />
             <select
-              value={selectedDeviceId}
-              onChange={(e) => setSelectedDeviceId(e.target.value)}
+              value={needsThisComputerPairing ? '__UNPAIRED_THIS_PC__' : selectedDeviceId}
+              onChange={(e) => {
+                if (e.target.value !== '__UNPAIRED_THIS_PC__') {
+                  setSelectedDeviceId(e.target.value);
+                }
+              }}
               className="text-xs font-medium pl-8 pr-7 py-1.5 rounded-full border border-black/[0.08] dark:border-white/[0.12] bg-white/80 dark:bg-[#202022] text-foreground appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#0071e3] shadow-sm hover:border-black/20 dark:hover:border-white/25 transition-all"
               title="Select computer to inspect"
             >
+              {needsThisComputerPairing && (
+                <option value="__UNPAIRED_THIS_PC__">
+                  This Computer (Not Paired Yet)
+                </option>
+              )}
               <option value="ALL">
                 All Computers ({devices.length} {devices.length === 1 ? 'Host' : 'Hosts'})
               </option>
               {devices.map((d) => (
                 <option key={d.id} value={d.id}>
                   [{d.status === 'ONLINE' ? 'Online' : 'Offline'}] {d.deviceName}
+                  {thisComputerDeviceId === d.id ? ' (This PC)' : ''}
                 </option>
               ))}
             </select>

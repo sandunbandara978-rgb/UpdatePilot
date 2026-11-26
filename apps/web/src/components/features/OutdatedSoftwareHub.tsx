@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { LiveTerminalModal } from '@/components/features/LiveTerminalModal';
 import { UpdatePreviewModal } from '@/components/features/UpdatePreviewModal';
 import { BatchUpdateProgressModal } from '@/components/features/BatchUpdateProgressModal';
+import { useDeviceContext } from '@/components/layout/DeviceContext';
 import { ApplicationEntity, DeviceEntity, JobStatus } from '@updatepilot/shared';
 import {
   ArrowUpCircle,
@@ -77,6 +78,12 @@ export function OutdatedSoftwareHub({
   const [terminalApp, setTerminalApp] = useState<ActiveJobInfo | null>(null);
   const [reviewApp, setReviewApp] = useState<ApplicationEntity | null>(null);
 
+  const {
+    isLoading: isDeviceLoading,
+    needsThisComputerPairing,
+    enableRemoteFleetView,
+  } = useDeviceContext();
+
   const deviceMap = useMemo(() => {
     const map: Record<string, string> = {};
     for (const d of devices) {
@@ -86,6 +93,13 @@ export function OutdatedSoftwareHub({
   }, [devices]);
 
   const fetchUpdates = useCallback(async () => {
+    if (isDeviceLoading) return;
+    if (needsThisComputerPairing) {
+      setUpdates([]);
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     try {
       const updatesUrl =
@@ -98,8 +112,8 @@ export function OutdatedSoftwareHub({
           : '/api/v1/dashboard';
 
       const [res, dashRes, healthRes] = await Promise.all([
-        fetch(updatesUrl),
-        totalApplications === undefined ? fetch(dashUrl) : Promise.resolve(null),
+        fetch(updatesUrl, { cache: 'no-store' }),
+        totalApplications === undefined ? fetch(dashUrl, { cache: 'no-store' }) : Promise.resolve(null),
         supportsLocalWinGet === undefined ? fetch('/api/v1/health') : Promise.resolve(null),
       ]);
 
@@ -129,7 +143,7 @@ export function OutdatedSoftwareHub({
     } finally {
       setIsLoading(false);
     }
-  }, [selectedDeviceId, totalApplications, supportsLocalWinGet]);
+  }, [selectedDeviceId, totalApplications, supportsLocalWinGet, isDeviceLoading, needsThisComputerPairing]);
 
   const effectiveTotalApps = totalApplications ?? fetchedTotalApps;
   const effectiveSupportsWinGet = supportsLocalWinGet ?? fetchedSupportsWinGet;
@@ -349,10 +363,17 @@ export function OutdatedSoftwareHub({
               <div className="flex items-center gap-1.5 w-full sm:w-auto">
                 <Laptop className="h-3.5 w-3.5 text-neutral-400" />
                 <select
-                  value={selectedDeviceId}
-                  onChange={(e) => onDeviceChange(e.target.value)}
+                  value={needsThisComputerPairing ? '__UNPAIRED_THIS_PC__' : selectedDeviceId}
+                  onChange={(e) => {
+                    if (e.target.value !== '__UNPAIRED_THIS_PC__') {
+                      onDeviceChange(e.target.value);
+                    }
+                  }}
                   className="px-3 py-1.5 rounded-xl bg-neutral-100/70 dark:bg-neutral-800/60 border border-black/[0.04] dark:border-white/[0.08] text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-[#0071e3] cursor-pointer"
                 >
+                  {needsThisComputerPairing && (
+                    <option value="__UNPAIRED_THIS_PC__">This Computer (Not Paired Yet)</option>
+                  )}
                   <option value="ALL">All Computers ({devices.length})</option>
                   {devices.map((d) => (
                     <option key={d.id} value={d.id}>
@@ -382,27 +403,31 @@ export function OutdatedSoftwareHub({
                   No applications matching &quot;{search}&quot; currently have pending updates.
                 </p>
               </div>
-            ) : devices.length === 0 || effectiveTotalApps === 0 ? (
+            ) : needsThisComputerPairing || devices.length === 0 || effectiveTotalApps === 0 ? (
               <div className="py-12 px-6 text-center space-y-3">
                 <div className="mx-auto h-12 w-12 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center">
                   <AlertTriangle className="h-6 w-6" />
                 </div>
                 <h4 className="font-bold text-foreground text-sm">
-                  {devices.length === 0
-                    ? 'No Windows Host Connected Yet'
-                    : 'No Software Inventory Scanned Yet (0 Apps Found)'}
+                  {needsThisComputerPairing && devices.length > 0
+                    ? 'This Computer Is Not Paired Yet'
+                    : devices.length === 0
+                      ? 'No Windows Host Connected Yet'
+                      : 'No Software Inventory Scanned Yet (0 Apps Found)'}
                 </h4>
                 <p className="text-xs text-muted-foreground max-w-lg mx-auto leading-relaxed">
-                  {!effectiveSupportsWinGet
-                    ? 'This dashboard is running on a cloud server (Linux) and cannot inspect your local PC apps directly. Install or run the UpdatePilot Windows Agent on your Windows computer to scan WinGet packages and report real outdated apps here.'
-                    : 'Run a WinGet discovery scan on your host computer to inspect installed software and detect available updates.'}
+                  {needsThisComputerPairing && devices.length > 0
+                    ? `Other host(s) (${devices.map((d) => d.deviceName).join(', ')}) exist in your account, so they are hidden here until you pair THIS computer. Pair this Windows PC to inspect and update its own unupdated software.`
+                    : !effectiveSupportsWinGet
+                      ? 'This dashboard is running on a cloud server (Linux) and cannot inspect your local PC apps directly. Install or run the UpdatePilot Windows Agent on your Windows computer to scan WinGet packages and report real outdated apps here.'
+                      : 'Run a WinGet discovery scan on your host computer to inspect installed software and detect available updates.'}
                 </p>
                 {effectiveStorageMode === 'ephemeral-memory' && (
                   <p className="text-[11px] text-amber-600 dark:text-amber-400 max-w-lg mx-auto font-medium">
                     Note: Database storage is not configured in Vercel yet. Configure Supabase (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY) or DATABASE_URL so paired devices and scan results persist across cloud requests.
                   </p>
                 )}
-                <div className="pt-1 flex items-center justify-center gap-2">
+                <div className="pt-1 flex items-center justify-center gap-2 flex-wrap">
                   {!effectiveSupportsWinGet && onConnectAgentClick && (
                     <Button
                       variant="primary"
@@ -411,7 +436,17 @@ export function OutdatedSoftwareHub({
                       className="gap-1.5 text-xs rounded-full bg-[#0071e3] hover:bg-[#0077ed] text-white"
                     >
                       <Laptop className="h-3.5 w-3.5" />
-                      <span>Pair Windows Computer</span>
+                      <span>Pair This Windows Computer</span>
+                    </Button>
+                  )}
+                  {needsThisComputerPairing && devices.length > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => enableRemoteFleetView('ALL')}
+                      className="gap-1.5 text-xs rounded-full"
+                    >
+                      <span>View Remote Fleet ({devices.length})</span>
                     </Button>
                   )}
                   {effectiveSupportsWinGet && onRunDiscoveryClick && (

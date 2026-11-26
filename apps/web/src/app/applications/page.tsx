@@ -22,7 +22,15 @@ import {
 } from 'lucide-react';
 
 export default function ApplicationsPage() {
-  const { devices, selectedDeviceId, setSelectedDeviceId } = useDeviceContext();
+  const {
+    devices,
+    selectedDeviceId,
+    setSelectedDeviceId,
+    isLoading: isDeviceLoading,
+    needsThisComputerPairing,
+    enableRemoteFleetView,
+    refreshDevices,
+  } = useDeviceContext();
   const [apps, setApps] = useState<ApplicationEntity[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -48,6 +56,15 @@ export default function ApplicationsPage() {
   }, [devices]);
 
   const fetchApplications = useCallback(async () => {
+    if (isDeviceLoading) return;
+    if (needsThisComputerPairing) {
+      setApps([]);
+      setTotal(0);
+      setTotalPages(1);
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     try {
       const query = new URLSearchParams({
@@ -60,7 +77,7 @@ export default function ApplicationsPage() {
         ...(statusFilter !== 'ALL' ? { status: statusFilter } : {}),
       });
 
-      const res = await fetch(`/api/v1/applications?${query.toString()}`);
+      const res = await fetch(`/api/v1/applications?${query.toString()}`, { cache: 'no-store' });
       const data = await res.json();
       if (data.success) {
         setApps(data.data.items);
@@ -72,7 +89,7 @@ export default function ApplicationsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [page, search, statusFilter, sortBy, sortOrder, selectedDeviceId]);
+  }, [page, search, statusFilter, sortBy, sortOrder, selectedDeviceId, isDeviceLoading, needsThisComputerPairing]);
 
   useEffect(() => {
     fetchApplications();
@@ -127,13 +144,18 @@ export default function ApplicationsPage() {
             <div className="flex items-center gap-2 w-full md:w-auto">
               <Laptop className="h-4 w-4 text-muted-foreground" />
               <select
-                value={selectedDeviceId}
+                value={needsThisComputerPairing ? '__UNPAIRED_THIS_PC__' : selectedDeviceId}
                 onChange={(e) => {
-                  setSelectedDeviceId(e.target.value);
-                  setPage(1);
+                  if (e.target.value !== '__UNPAIRED_THIS_PC__') {
+                    setSelectedDeviceId(e.target.value);
+                    setPage(1);
+                  }
                 }}
                 className="px-3 py-2 rounded-lg bg-background border border-border/70 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer font-semibold"
               >
+                {needsThisComputerPairing && (
+                  <option value="__UNPAIRED_THIS_PC__">This Computer (Not Paired Yet)</option>
+                )}
                 <option value="ALL">All Computers ({devices.length})</option>
                 {devices.map((d) => (
                   <option key={d.id} value={d.id}>
@@ -207,6 +229,38 @@ export default function ApplicationsPage() {
                   <tr>
                     <td colSpan={8} className="py-12 text-center text-muted-foreground">
                       Loading inventory...
+                    </td>
+                  </tr>
+                ) : needsThisComputerPairing ? (
+                  <tr>
+                    <td colSpan={8} className="py-12 px-6 text-center space-y-3">
+                      <div className="text-sm font-bold text-foreground">
+                        This Computer Is Not Paired Yet
+                      </div>
+                      <p className="text-xs text-muted-foreground max-w-md mx-auto">
+                        Pair this Windows computer to inspect its own installed applications, or switch to view your remote fleet.
+                      </p>
+                      <div className="flex items-center justify-center gap-2 pt-1">
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => setIsConnectModalOpen(true)}
+                          className="gap-1.5 text-xs"
+                        >
+                          <Laptop className="h-3.5 w-3.5" />
+                          <span>Pair This Computer</span>
+                        </Button>
+                        {devices.length > 0 && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => enableRemoteFleetView('ALL')}
+                            className="text-xs"
+                          >
+                            View Remote Fleet ({devices.length})
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ) : apps.length === 0 ? (
@@ -338,7 +392,10 @@ export default function ApplicationsPage() {
       <ConnectAgentModal
         isOpen={isConnectModalOpen}
         onClose={() => setIsConnectModalOpen(false)}
-        onPairedSuccess={fetchApplications}
+        onPairedSuccess={async () => {
+          await refreshDevices();
+          await fetchApplications();
+        }}
       />
     </div>
   );

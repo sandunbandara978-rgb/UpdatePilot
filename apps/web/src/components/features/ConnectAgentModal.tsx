@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
+import { useDeviceContext } from '@/components/layout/DeviceContext';
 import {
   Copy,
   Check,
@@ -23,6 +24,7 @@ interface ConnectAgentModalProps {
 }
 
 export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectAgentModalProps) {
+  const { bindThisComputer } = useDeviceContext();
   const [activeTab, setActiveTab] = useState<'network' | 'direct'>('direct');
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [serverUrl, setServerUrl] = useState('http://localhost:3000');
@@ -33,6 +35,7 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
   const [successMessage, setSuccessMessage] = useState('');
   const [localScanLoading, setLocalScanLoading] = useState(false);
   const [supportsLocalWinGet, setSupportsLocalWinGet] = useState(true);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -42,7 +45,17 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
   }, []);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+      setPairingCode(null);
+      setIsSuccess(false);
+      setSuccessMessage('');
+      return;
+    }
+
     let cancelled = false;
     fetch('/api/v1/health')
       .then((r) => r.json())
@@ -52,19 +65,25 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
         setSupportsLocalWinGet(canLocal);
         if (!canLocal) {
           setActiveTab('network');
-          if (!pairingCode) {
-            generateCode();
-          }
+          generateCode();
         }
       })
       .catch(() => { });
     return () => {
       cancelled = true;
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   const generateCode = async () => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
     setIsLoading(true);
     setIsSuccess(false);
     try {
@@ -72,7 +91,7 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
       const data = await res.json();
       if (data.success) {
         setPairingCode(data.data.pairingCode);
-        pollForPairing();
+        pollForPairing(data.data.deviceId);
       }
     } catch (err) {
       console.error('Failed to generate code:', err);
@@ -81,34 +100,70 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
     }
   };
 
-  const pollForPairing = () => {
+  const pollForPairing = (pendingDeviceId?: string) => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+    }
+
     let attempts = 0;
-    const interval = setInterval(async () => {
+    let pairedWaitingForAppsSince: number | null = null;
+
+    pollIntervalRef.current = setInterval(async () => {
       attempts++;
-      if (attempts > 50) {
-        clearInterval(interval);
+      if (attempts > 120) {
+        if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
         return;
       }
 
       try {
-        const res = await fetch('/api/v1/devices');
+        const res = await fetch('/api/v1/devices', { cache: 'no-store' });
         const data = await res.json();
-        if (data.success && data.data.devices.length > 0) {
-          const realOnline = data.data.devices.find(
-            (d: { status: string; deviceName: string }) =>
-              d.status === 'ONLINE' && !d.deviceName.includes('Pending Pairing')
-          );
-          if (realOnline) {
-            setIsSuccess(true);
-            setSuccessMessage(`Connected ${realOnline.deviceName} successfully!`);
-            clearInterval(interval);
-            if (onPairedSuccess) onPairedSuccess();
+        if (data.success && Array.isArray(data.data?.devices)) {
+          // Strictly wait for the SPECIFIC pendingDeviceId created for this pairing attempt!
+          const matched = pendingDeviceId
+            ? data.data.devices.find(
+                (d: { id: string; status: string; deviceName: string }) =>
+                  d.id === pendingDeviceId &&
+                  d.status === 'ONLINE' &&
+                  !d.deviceName.includes('Pending Pairing')
+              )
+            : null;
+
+          if (matched) {
+            if (!pairedWaitingForAppsSince) {
+              pairedWaitingForAppsSince = Date.now();
+            }
+
+            // Wait briefly for initial WinGet inventory submission before showing completion
+            let appsCount = 0;
+            try {
+              const dashRes = await fetch(`/api/v1/dashboard?deviceId=${matched.id}`, { cache: 'no-store' });
+              const dashData = await dashRes.json();
+              appsCount = dashData.data?.totalApplications ?? 0;
+            } catch {
+              // ignore transient error
+            }
+
+            const waitedMs = Date.now() - pairedWaitingForAppsSince;
+            if (appsCount > 0 || waitedMs >= 12000) {
+              if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+              pollIntervalRef.current = null;
+              bindThisComputer(matched.id);
+              setIsSuccess(true);
+              setSuccessMessage(
+                appsCount > 0
+                  ? `Connected ${matched.deviceName} (${appsCount} applications discovered)!`
+                  : `Connected ${matched.deviceName} successfully!`
+              );
+              if (onPairedSuccess) onPairedSuccess();
+            }
           }
         }
       } catch {
         // continue polling
       }
-    }, 3000);
+    }, 2500);
   };
 
   const handleDirectLocalScan = async () => {
@@ -117,6 +172,9 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
       const res = await fetch('/api/v1/system/scan-local', { method: 'POST' });
       const data = await res.json();
       if (data.success) {
+        if (data.data?.deviceId) {
+          bindThisComputer(data.data.deviceId);
+        }
         setIsSuccess(true);
         setSuccessMessage(
           `Discovered ${data.data.appsSaved} applications (${data.data.updatesCount} updates available) on ${data.data.deviceName}!`
@@ -327,7 +385,11 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
                     <span>Listening for remote computer handshake...</span>
                   </div>
                   <a
-                    href={`${serverUrl}/api/v1/agent/download?format=ps1`}
+                    href={
+                      serverUrl.includes('localhost') || serverUrl.includes('127.0.0.1')
+                        ? `${serverUrl}/api/v1/agent/download?format=ps1`
+                        : rawFallbackScriptUrl
+                    }
                     download="UpdatePilot-Client.ps1"
                     className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
                   >

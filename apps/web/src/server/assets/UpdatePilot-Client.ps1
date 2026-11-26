@@ -240,11 +240,15 @@ if ($Pair) {
             Write-Host "✔ Software inventory synchronized: $($apps.Count) applications discovered!" -ForegroundColor Green
         } else {
             Write-Host "[ERROR] Pairing failed: $($resp.error.message)" -ForegroundColor Red
+            exit 1
         }
     } catch {
         Write-Host "[ERROR] Failed to communicate with $Server : $($_.Exception.Message)" -ForegroundColor Red
+        exit 1
     }
-    exit 0
+    if (-not $Service) {
+        exit 0
+    }
 }
 
 # Scan or Service requires pairing credentials
@@ -256,7 +260,7 @@ if (-not $creds) {
 
 $headers = @{ "Authorization" = "Bearer $($creds.Token)" }
 
-if ($Scan) {
+if ($Scan -and -not $Pair) {
     $apps = Get-WinGetApps
     $scanPayload = @{
         scanJobId = "manual_scan_" + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
@@ -269,10 +273,68 @@ if ($Scan) {
     } catch {
         Write-Host "[ERROR] Scan submission failed: $($_.Exception.Message)" -ForegroundColor Red
     }
-    exit 0
+    if (-not $Service) {
+        exit 0
+    }
+}
+
+function Start-LocalIdentityBridge($creds, $agentVer) {
+    try {
+        $identityJson = (@{
+            computerName = $env:COMPUTERNAME
+            deviceId = $creds.DeviceId
+            server = $creds.Server.TrimEnd('/')
+            agentVersion = $agentVer
+        } | ConvertTo-Json -Compress)
+
+        $rs = [runspacefactory]::CreateRunspace()
+        $rs.Open()
+        $ps = [powershell]::Create()
+        $ps.Runspace = $rs
+        [void]$ps.AddScript({
+            param($payloadJson)
+            try {
+                $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 47832)
+                $listener.Start()
+                while ($true) {
+                    $client = $listener.AcceptTcpClient()
+                    try {
+                        $stream = $client.GetStream()
+                        $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::ASCII, $false, 1024, $true)
+                        $requestLine = $reader.ReadLine()
+                        while ($true) {
+                            $headerLine = $reader.ReadLine()
+                            if ([string]::IsNullOrEmpty($headerLine)) { break }
+                        }
+                        $isOptions = $requestLine -and $requestLine.StartsWith("OPTIONS ")
+                        $isIdentity = $requestLine -and ($requestLine -match "^GET\s+/identity")
+                        $cors = "Access-Control-Allow-Origin: *`r`nAccess-Control-Allow-Private-Network: true`r`nAccess-Control-Allow-Methods: GET, OPTIONS`r`nAccess-Control-Allow-Headers: Content-Type`r`nConnection: close`r`n"
+                        if ($isOptions) {
+                            $resp = "HTTP/1.1 204 No Content`r`n" + $cors + "`r`n"
+                        } elseif ($isIdentity) {
+                            $bytesLen = [System.Text.Encoding]::UTF8.GetByteCount($payloadJson)
+                            $resp = "HTTP/1.1 200 OK`r`nContent-Type: application/json; charset=utf-8`r`nContent-Length: $bytesLen`r`nCache-Control: no-store`r`n" + $cors + "`r`n" + $payloadJson
+                        } else {
+                            $resp = "HTTP/1.1 404 Not Found`r`nContent-Length: 0`r`n" + $cors + "`r`n"
+                        }
+                        $outBytes = [System.Text.Encoding]::UTF8.GetBytes($resp)
+                        $stream.Write($outBytes, 0, $outBytes.Length)
+                        $stream.Flush()
+                    } catch {} finally {
+                        $client.Close()
+                    }
+                }
+            } catch {}
+        }).AddArgument($identityJson)
+        [void]$ps.BeginInvoke()
+        return @{ Ps = $ps; Runspace = $rs }
+    } catch {
+        return $null
+    }
 }
 
 if ($Service) {
+    $bridge = Start-LocalIdentityBridge -creds $creds -agentVer $AgentVersion
     Write-Host "[UpdatePilot Service] Continuous worker started for $($creds.ComputerName)..." -ForegroundColor Green
     Write-Host "Server: $($creds.Server) | Device ID: $($creds.DeviceId)"
     Write-Host "Press Ctrl+C to terminate."
@@ -402,6 +464,7 @@ if ($Service) {
 
         Start-Sleep -Seconds 15
     }
+    exit 0
 }
 
 # Default: Show help

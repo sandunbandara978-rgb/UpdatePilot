@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { jsonSuccess, jsonError } from '@/server/apiResponse';
+import { jsonSuccess, jsonError, jsonAgentError } from '@/server/apiResponse';
 import { jobService } from '@/server/services/jobService';
 import { AgentJobReportSchema } from '@updatepilot/shared';
 
@@ -23,7 +23,6 @@ export async function POST(
     const result = await jobService.reportJobByAgent(token, id, validated);
     return jsonSuccess(result);
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return jsonError(msg, 'REPORT_JOB_ERROR', 400);
+    return jsonAgentError(err, 'REPORT_JOB_ERROR');
   }
 }

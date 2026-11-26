@@ -4,7 +4,18 @@ import { DeviceEntity } from '@updatepilot/shared';
 
 export class DeviceService {
   async listDevices(userId: string): Promise<DeviceEntity[]> {
-    return deviceRepo.listByUserId(userId);
+    const all = await deviceRepo.listByUserId(userId);
+    // Filter out expired/unclaimed placeholder rows created when opening pairing modal without completing pairing
+    const now = Date.now();
+    return all.filter((d) => {
+      if (d.deviceName === 'Pending Pairing...' && d.status === 'OFFLINE') {
+        const exp = (d as unknown as { pairingCodeExpiresAt?: string }).pairingCodeExpiresAt;
+        if (exp && new Date(exp).getTime() <= now) {
+          return false;
+        }
+      }
+      return true;
+    });
   }
 
   async assertDeviceOwnership(deviceId: string, userId: string): Promise<DeviceEntity> {
@@ -18,7 +29,7 @@ export class DeviceService {
     return device;
   }
 
-  async generatePairingCode(userId: string): Promise<{ pairingCode: string; expiresAt: string }> {
+  async generatePairingCode(userId: string): Promise<{ deviceId: string; pairingCode: string; expiresAt: string }> {
     const code = SecurityAuth.generatePairingCode();
     const ttlMinutes = parseInt(process.env.PAIRING_CODE_TTL_MINUTES || '10', 10) || 10;
     const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
@@ -43,7 +54,7 @@ export class DeviceService {
       metadata: { expiresAt: expiresAt.toISOString() },
     });
 
-    return { pairingCode: code, expiresAt: expiresAt.toISOString() };
+    return { deviceId: pendingDevice.id, pairingCode: code, expiresAt: expiresAt.toISOString() };
   }
 
   async pairDevice(payload: {

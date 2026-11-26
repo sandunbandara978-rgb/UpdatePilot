@@ -11,7 +11,7 @@ import { ShieldCheck, ExternalLink, Info, Calendar, Database, RefreshCw, ArrowUp
 import { formatDate } from '@/lib/utils';
 
 export default function SecurityPage() {
-  const { selectedDeviceId } = useDeviceContext();
+  const { selectedDeviceId, isLoading: isDeviceLoading, needsThisComputerPairing } = useDeviceContext();
   const [findings, setFindings] = useState<SecurityFindingEntity[]>([]);
   const [disclaimer, setDisclaimer] = useState<string>('');
   const [source, setSource] = useState<string>('');
@@ -21,6 +21,14 @@ export default function SecurityPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchFindings = useCallback(async (forceRefresh = false) => {
+    if (isDeviceLoading) return;
+    if (needsThisComputerPairing) {
+      setFindings([]);
+      setCheckedPackagesCount(0);
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     try {
       const params = new URLSearchParams();
@@ -43,7 +51,7 @@ export default function SecurityPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedDeviceId]);
+  }, [selectedDeviceId, isDeviceLoading, needsThisComputerPairing]);
 
   useEffect(() => {
     fetchFindings(false);

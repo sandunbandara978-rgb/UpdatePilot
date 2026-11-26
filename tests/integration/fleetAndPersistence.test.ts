@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { memoryStore, MemoryDeviceRepository, MemoryApplicationRepository } from '../../apps/web/src/server/repositories/memoryStore';
 import { jobService } from '../../apps/web/src/server/services/jobService';
+import { deviceService } from '../../apps/web/src/server/services/deviceService';
 
 describe('Fleet Multi-Computer & Persistence Integrity', () => {
   const deviceRepo = new MemoryDeviceRepository();
@@ -77,5 +78,21 @@ describe('Fleet Multi-Computer & Persistence Integrity', () => {
     const apps = Array.from(memoryStore.applications.values());
     const fixtureApps = apps.filter((a) => a.deviceId === 'dev_win11_workstation_fixture');
     expect(fixtureApps.length).toBe(0);
+  });
+
+  it('returns specific pending deviceId when generating pairing code and hides expired pending placeholders', async () => {
+    const uid = `usr_pending_test_${Date.now()}`;
+    const generated = await deviceService.generatePairingCode(uid);
+    expect(generated.deviceId).toBeDefined();
+    expect(generated.pairingCode).toMatch(/^UP-\d{6}$/);
+
+    // Active pending code is visible until expired
+    const activeList = await deviceService.listDevices(uid);
+    expect(activeList.some((d) => d.id === generated.deviceId)).toBe(true);
+
+    // Expired pending placeholder is filtered from device listings
+    await deviceRepo.setPairingCode(generated.deviceId, generated.pairingCode, new Date(Date.now() - 1000));
+    const afterExpiry = await deviceService.listDevices(uid);
+    expect(afterExpiry.some((d) => d.id === generated.deviceId)).toBe(false);
   });
 });

@@ -31,19 +31,45 @@ export default function DashboardOverviewPage() {
   const [isScanning, setIsScanning] = useState(false);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
-  const [supportsLocalWinGet, setSupportsLocalWinGet] = useState<boolean>(true);
-  const [storageMode, setStorageMode] = useState<string>('disk');
 
-  const { devices, selectedDeviceId, setSelectedDeviceId, activeDevice, refreshDevices } = useDeviceContext();
+  const {
+    devices,
+    selectedDeviceId,
+    setSelectedDeviceId,
+    activeDevice,
+    bindThisComputer,
+    enableRemoteFleetView,
+    supportsLocalWinGet,
+    storageMode,
+    needsThisComputerPairing,
+    isLoading: isDeviceLoading,
+    refreshDevices,
+  } = useDeviceContext();
 
   const fetchDashboardData = useCallback(async () => {
+    if (isDeviceLoading) return;
+    if (needsThisComputerPairing) {
+      setMetrics({
+        totalApplications: 0,
+        updatesAvailable: 0,
+        upToDate: 0,
+        unsupported: 0,
+        unknown: 0,
+        activeDevicesCount: devices.filter((d) => d.status === 'ONLINE').length,
+        lastScanTimestamp: null,
+        recentActivity: [],
+      });
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     try {
       const url =
         selectedDeviceId && selectedDeviceId !== 'ALL'
           ? `/api/v1/dashboard?deviceId=${selectedDeviceId}`
           : '/api/v1/dashboard';
-      const res = await fetch(url);
+      const res = await fetch(url, { cache: 'no-store' });
       const data = await res.json();
       if (data.success) {
         setMetrics(data.data);
@@ -53,7 +79,7 @@ export default function DashboardOverviewPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedDeviceId]);
+  }, [selectedDeviceId, isDeviceLoading, needsThisComputerPairing, devices]);
 
   /**
    * Runs a real-time WinGet dual-scan (winget list + winget upgrade) when running
@@ -68,12 +94,6 @@ export default function DashboardOverviewPage() {
       const healthRes = await fetch('/api/v1/health');
       const healthData = await healthRes.json();
       const canRunLocalWinGet = !(healthData.success && healthData.data?.supportsLocalWinGet === false);
-      if (healthData.success && healthData.data) {
-        setSupportsLocalWinGet(Boolean(healthData.data.supportsLocalWinGet));
-        if (healthData.data.storageMode) {
-          setStorageMode(healthData.data.storageMode);
-        }
-      }
 
       if (!canRunLocalWinGet) {
         await refreshDevices();
@@ -88,10 +108,15 @@ export default function DashboardOverviewPage() {
 
       const res = await fetch('/api/v1/system/scan-local', { method: 'POST' });
       const data = await res.json();
-      if (data.success && !silent) {
-        setScanMessage(
-          `Discovered ${data.data.appsSaved} applications (${data.data.updatesCount} updates pending) on ${data.data.deviceName}.`
-        );
+      if (data.success) {
+        if (data.data?.deviceId) {
+          bindThisComputer(data.data.deviceId);
+        }
+        if (!silent) {
+          setScanMessage(
+            `Discovered ${data.data.appsSaved} applications (${data.data.updatesCount} updates pending) on ${data.data.deviceName}.`
+          );
+        }
       } else if (!data.success && !silent) {
         setScanMessage(data.error?.message || 'Host scan could not be completed.');
       }
@@ -102,7 +127,7 @@ export default function DashboardOverviewPage() {
     } finally {
       if (!silent) setIsScanning(false);
     }
-  }, [fetchDashboardData, refreshDevices]);
+  }, [bindThisComputer, fetchDashboardData, refreshDevices]);
 
   // On first mount: always run a real-time WinGet scan so the dashboard
   // reflects live installed software and actual available updates — never stale cache.
@@ -121,6 +146,12 @@ export default function DashboardOverviewPage() {
     setScanMessage(null);
     try {
       if (!supportsLocalWinGet) {
+        if (needsThisComputerPairing) {
+          setScanMessage('Pair this Windows PC first to scan and view its own software.');
+          setIsConnectModalOpen(true);
+          return;
+        }
+
         if (selectedDeviceId !== 'ALL' && activeDevice) {
           await fetch(`/api/v1/devices/${selectedDeviceId}/scans`, { method: 'POST' });
           setScanMessage(`Scan job queued for ${activeDevice.deviceName}. Ensure the Windows Agent service is running on that PC.`);
@@ -150,7 +181,8 @@ export default function DashboardOverviewPage() {
         selectedDeviceId === 'ALL' ||
         selectedDeviceId.startsWith('dev_local_') ||
         !activeDevice ||
-        activeDevice?.deviceName.includes('(This PC)')
+        activeDevice.agentVersion?.includes('Local Engine') ||
+        activeDevice.deviceName.includes('(This PC)')
       ) {
         await runLiveScan(false);
         return; // runLiveScan manages isScanning itself
@@ -185,30 +217,47 @@ export default function DashboardOverviewPage() {
           </div>
         )}
 
-        {!supportsLocalWinGet && !isLoading && (devices.length === 0 || (metrics?.totalApplications ?? 0) === 0) && (
+        {!supportsLocalWinGet && !isLoading && (needsThisComputerPairing || devices.length === 0 || (metrics?.totalApplications ?? 0) === 0) && (
           <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/25 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-start gap-2.5 text-amber-800 dark:text-amber-300">
               <AlertCircle className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
               <div className="space-y-1">
                 <span className="font-bold block">
-                  Cloud Dashboard Active — Waiting for Windows Agent Scan
+                  {needsThisComputerPairing && devices.length > 0
+                    ? 'This Computer Is Not Paired Yet — Pair to Show This PC\'s Own Software'
+                    : 'Cloud Dashboard Active — Waiting for Windows Agent Scan'}
                 </span>
                 <p className="text-[11px] leading-relaxed">
-                  This server runs in the cloud (Linux/Vercel) and cannot scan your local Windows WinGet packages directly. Pair and run the UpdatePilot Windows Agent on your Windows PC to view real installed software and pending updates here.
+                  {needsThisComputerPairing && devices.length > 0
+                    ? `Other host(s) (${devices.map((d) => d.deviceName).join(', ')}) are already registered in this account, so UpdatePilot isolated them to avoid showing another computer's software here. Pair this computer to see and update its own installed software.`
+                    : 'This server runs in the cloud (Linux/Vercel) and cannot scan your local Windows WinGet packages directly. Pair and run the UpdatePilot Windows Agent on your Windows PC to view real installed software and pending updates here.'}
                   {storageMode === 'ephemeral-memory' &&
                     ' Also ensure your Supabase or PostgreSQL environment variables are configured in Vercel so device inventory persists across requests.'}
                 </p>
               </div>
             </div>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => setIsConnectModalOpen(true)}
-              className="gap-1.5 shrink-0 text-xs"
-            >
-              <Laptop className="h-3.5 w-3.5" />
-              <span>Pair Windows PC</span>
-            </Button>
+            <div className="flex items-center gap-2 shrink-0">
+              {needsThisComputerPairing && devices.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => enableRemoteFleetView('ALL')}
+                  className="gap-1.5 text-xs"
+                >
+                  <Server className="h-3.5 w-3.5" />
+                  <span>View Fleet ({devices.length})</span>
+                </Button>
+              )}
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setIsConnectModalOpen(true)}
+                className="gap-1.5 text-xs"
+              >
+                <Laptop className="h-3.5 w-3.5" />
+                <span>Pair This Computer</span>
+              </Button>
+            </div>
           </div>
         )}
 

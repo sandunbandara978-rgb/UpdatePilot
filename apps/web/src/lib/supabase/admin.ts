@@ -4,20 +4,48 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 let adminClientInstance: SupabaseClient | null = null;
 
 export function getSupabaseEnv() {
-  const url =
+  let url =
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
     process.env.SUPABASE_URL ||
     process.env.NEXT_PUBLIC_SUPABASE_API_URL ||
     process.env.SUPABASE_API_URL ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    process.env.API_URL ||
+    process.env.SUPABASE_APIURL ||
+    process.env.apiurl ||
     '';
-  const anonKey =
+
+  let anonKey =
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
     process.env.SUPABASE_ANON_KEY ||
+    process.env.ANON_KEY ||
+    process.env.NEXT_PUBLIC_ANON_KEY ||
     '';
-  const serviceRoleKey =
+
+  let serviceRoleKey =
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_SERVICE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE ||
+    process.env.SERVICE_ROLE_KEY ||
+    process.env.SERVICE_ROLE ||
     '';
+
+  // Fallback scan for differently named Supabase URL / service role env keys in Vercel
+  if (!url || !anonKey || !serviceRoleKey) {
+    for (const [k, rawVal] of Object.entries(process.env)) {
+      const val = (rawVal || '').trim();
+      if (!val) continue;
+      if (!url && /supabase|api.?url/i.test(k) && /^https:\/\/.+\.supabase\.(co|in|net)/i.test(val)) {
+        url = val;
+      } else if (!anonKey && /anon/i.test(k) && val.length > 20) {
+        anonKey = val;
+      } else if (!serviceRoleKey && /service.?role/i.test(k) && val.length > 20) {
+        serviceRoleKey = val;
+      }
+    }
+  }
+
   return { url: url.trim(), anonKey: anonKey.trim(), serviceRoleKey: serviceRoleKey.trim() };
 }
 

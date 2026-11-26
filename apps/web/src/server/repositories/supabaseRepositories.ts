@@ -229,6 +229,7 @@ export class SupabaseDeviceRepository implements IDeviceRepository {
       status: d.status as DeviceEntity['status'],
       lastSeenAt: d.last_seen_at,
       createdAt: d.created_at,
+      ...(d.pairing_code_expires_at ? { pairingCodeExpiresAt: d.pairing_code_expires_at } : {}),
     }));
   }
 
@@ -480,29 +481,81 @@ export class SupabaseApplicationRepository implements IApplicationRepository {
       status: ApplicationStatus;
     }>
   ): Promise<number> {
+    if (apps.length === 0) return 0;
     const supabase = getSupabaseAdmin();
-    const payload = apps.map((a) => ({
-      device_id: deviceId,
-      name: a.name,
-      package_id: a.packageId || null,
-      publisher: a.publisher || null,
-      installed_version: a.installedVersion,
-      available_version: a.availableVersion || null,
-      source: a.source || 'winget',
-      status: a.status,
-      last_scanned_at: new Date().toISOString(),
-    }));
+    const nowIso = new Date().toISOString();
 
-    const { error } = await supabase
+    // Deduplicate incoming WinGet rows by (name, installedVersion) so Postgres upsert never hits a duplicate row conflict
+    const dedupMap = new Map<string, (typeof apps)[number]>();
+    for (const a of apps) {
+      const key = `${a.name}::${a.installedVersion}`;
+      const existing = dedupMap.get(key);
+      if (!existing || (!existing.packageId && a.packageId) || (!existing.availableVersion && a.availableVersion)) {
+        dedupMap.set(key, a);
+      }
+    }
+    const uniqueApps = Array.from(dedupMap.values());
+
+    // Load existing rows for this device so version upgrades update existing rows in place instead of leaving stale UPDATE_AVAILABLE rows
+    const { data: existingRows } = await supabase
       .from('applications')
-      .upsert(payload, { onConflict: 'device_id,name,installed_version' });
+      .select('id, name, package_id, installed_version')
+      .eq('device_id', deviceId);
 
-    if (error) {
-      console.error('Supabase application upsertMany error:', error);
-      return 0;
+    const existingList = existingRows || [];
+    const matchedIds = new Set<string>();
+    const updatesToApply: Array<{ id: string; record: Record<string, unknown> }> = [];
+    const insertsToUpsert: Array<Record<string, unknown>> = [];
+
+    for (const a of uniqueApps) {
+      const matched = existingList.find((row) => {
+        if (matchedIds.has(row.id)) return false;
+        const pkgMatch = Boolean(
+          a.packageId && row.package_id && row.package_id.toLowerCase() === a.packageId.toLowerCase()
+        );
+        const nameMatch = row.name.toLowerCase() === a.name.toLowerCase();
+        return pkgMatch || nameMatch;
+      });
+
+      const baseRecord = {
+        device_id: deviceId,
+        name: a.name,
+        package_id: a.packageId || null,
+        publisher: a.publisher || null,
+        installed_version: a.installedVersion,
+        available_version: a.availableVersion || null,
+        source: a.source || 'winget',
+        status: a.status,
+        last_scanned_at: nowIso,
+        updated_at: nowIso,
+      };
+
+      if (matched) {
+        matchedIds.add(matched.id);
+        updatesToApply.push({ id: matched.id, record: baseRecord });
+      } else {
+        insertsToUpsert.push(baseRecord);
+      }
     }
 
-    return apps.length;
+    if (updatesToApply.length > 0) {
+      await Promise.all(
+        updatesToApply.map((u) => supabase.from('applications').update(u.record).eq('id', u.id))
+      );
+    }
+
+    if (insertsToUpsert.length > 0) {
+      const { error } = await supabase
+        .from('applications')
+        .upsert(insertsToUpsert, { onConflict: 'device_id,name,installed_version' });
+
+      if (error) {
+        console.error('Supabase application upsertMany error:', error);
+        return updatesToApply.length;
+      }
+    }
+
+    return uniqueApps.length;
   }
 
   async updateStatus(

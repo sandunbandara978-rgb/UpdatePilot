@@ -35,6 +35,7 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
   const [successMessage, setSuccessMessage] = useState('');
   const [localScanLoading, setLocalScanLoading] = useState(false);
   const [supportsLocalWinGet, setSupportsLocalWinGet] = useState(true);
+  const [storageMode, setStorageMode] = useState<string>('disk');
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -63,6 +64,9 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
         if (cancelled) return;
         const canLocal = !(h.success && h.data?.supportsLocalWinGet === false);
         setSupportsLocalWinGet(canLocal);
+        if (h.success && h.data?.storageMode) {
+          setStorageMode(h.data.storageMode);
+        }
         if (!canLocal) {
           setActiveTab('network');
           generateCode();
@@ -325,6 +329,12 @@ export function ConnectAgentModal({ isOpen, onClose, onPairedSuccess }: ConnectA
 
             {pairingCode && (
               <div className="space-y-4">
+                {storageMode === 'ephemeral-memory' && (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
+                    <strong>Vercel Notice (No Database Configured):</strong> This cloud deployment is currently running in <code className="font-mono">ephemeral-memory</code> mode. Pairings live only in temporary server memory until you set <code className="font-mono">NEXT_PUBLIC_SUPABASE_URL</code>, <code className="font-mono">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>, and <code className="font-mono">SUPABASE_SERVICE_ROLE_KEY</code> in Vercel Environment Variables.
+                  </div>
+                )}
+
                 {/* Pairing Code Banner */}
                 <div className="p-4 rounded-2xl bg-brand-500/5 border border-brand-500/20 text-center">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">

@@ -1,6 +1,7 @@
 import { deviceRepo, auditRepo } from '../repositories';
 import { SecurityAuth } from '../security/auth';
 import { DeviceEntity } from '@updatepilot/shared';
+import { isSupabaseConfigured } from '@/lib/supabase/admin';
 
 export class DeviceService {
   async listDevices(userId: string): Promise<DeviceEntity[]> {
@@ -102,8 +103,21 @@ export class DeviceService {
 
   async verifyAgentToken(token: string): Promise<string> {
     const cred = await deviceRepo.findCredentialByToken(token);
-    if (!cred || cred.isRevoked) {
-      throw new Error('Unauthorized: Agent token invalid or revoked.');
+    if (cred?.isRevoked) {
+      const err = new Error('Unauthorized: Agent token has been revoked by administrator.') as Error & { code?: string };
+      err.code = 'TOKEN_REVOKED';
+      throw err;
+    }
+    if (!cred) {
+      const isEphemeralCloud =
+        Boolean(process.env.VERCEL) && !isSupabaseConfigured() && !process.env.DATABASE_URL;
+      const err = new Error(
+        isEphemeralCloud
+          ? 'Unauthorized: Cloud server is running in ephemeral-memory mode without a database (Supabase/DATABASE_URL), so agent credentials do not persist across serverless containers.'
+          : 'Unauthorized: Agent token invalid or revoked.'
+      ) as Error & { code?: string };
+      err.code = isEphemeralCloud ? 'EPHEMERAL_SESSION_LOST' : 'UNAUTHORIZED';
+      throw err;
     }
     return cred.deviceId;
   }

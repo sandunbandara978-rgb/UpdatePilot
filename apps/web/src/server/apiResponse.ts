@@ -23,11 +23,12 @@ export function jsonError(message: string, code = 'INTERNAL_ERROR', status = 400
  */
 export function jsonAgentError(err: unknown, defaultCode: string) {
   const msg = err instanceof Error ? err.message : String(err);
+  const explicitCode = (err as { code?: string })?.code;
   if (msg.startsWith('Unauthorized:')) {
-    return jsonError(msg, 'UNAUTHORIZED', 401);
+    return jsonError(msg, explicitCode || 'UNAUTHORIZED', 401);
   }
   if (msg.startsWith('Forbidden:')) {
-    return jsonError(msg, 'FORBIDDEN', 403);
+    return jsonError(msg, explicitCode || 'FORBIDDEN', 403);
   }
-  return jsonError(msg, defaultCode, 400);
+  return jsonError(msg, explicitCode || defaultCode, 400);
 }

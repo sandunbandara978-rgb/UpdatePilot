@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     UpdatePilot Standalone Windows Client (Zero-Dependency PowerShell Edition)
 .DESCRIPTION
@@ -454,12 +454,30 @@ if ($Service) {
             }
         } catch {
             $errMsg = $_.Exception.Message
-            if ($errMsg -match "401|Unauthorized|revoked") {
-                Write-Host "[ERROR] Agent credentials revoked by server. Clearing local credentials and stopping." -ForegroundColor Red
+            $errCode = ""
+            if ($_.Exception.Response) {
+                try {
+                    $stream = $_.Exception.Response.GetResponseStream()
+                    $reader = New-Object System.IO.StreamReader($stream)
+                    $respText = $reader.ReadToEnd()
+                    if ($respText) {
+                        $errJson = $respText | ConvertFrom-Json
+                        if ($errJson.error -and $errJson.error.code) {
+                            $errCode = $errJson.error.code
+                        }
+                    }
+                } catch {}
+            }
+
+            if ($errCode -eq "EPHEMERAL_SESSION_LOST") {
+                Write-Host "[WARNING] Cloud server ($($creds.Server)) is running in ephemeral-memory mode without a Supabase/PostgreSQL database, so pairing state reset across serverless instances. Pair again or configure Supabase env vars in Vercel." -ForegroundColor Yellow
+            } elseif ($errCode -eq "TOKEN_REVOKED" -or $errMsg -match "401|Unauthorized|revoked") {
+                Write-Host "[ERROR] Agent credentials revoked or rejected by server. Clearing local credentials and stopping." -ForegroundColor Red
                 if (Test-Path $CredPath) { Remove-Item $CredPath -Force }
                 break
+            } else {
+                Write-Host "[WARNING] Polling error: $errMsg" -ForegroundColor DarkGray
             }
-            Write-Host "[WARNING] Polling error: $errMsg" -ForegroundColor DarkGray
         }
 
         Start-Sleep -Seconds 15

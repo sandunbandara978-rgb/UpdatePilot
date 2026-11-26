@@ -31,13 +31,45 @@ export async function POST(req: NextRequest) {
     const normalized = email.toLowerCase();
 
     // 1. If Supabase is active, authenticate via Supabase Auth
+    const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'Password123!';
     if (isSupabaseConfigured()) {
       try {
         const supabase = getSupabaseAdmin();
-        const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
-          email: normalized.includes('@') ? normalized : `${normalized}@updatepilot.local`,
+        const targetEmail = normalized.includes('@') ? normalized : `${normalized}@updatepilot.local`;
+        let { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
+          email: targetEmail,
           password,
         });
+
+        // Bootstrap default admin in Supabase Auth automatically on an empty database
+        if (
+          (!authData?.user || authErr) &&
+          (normalized === 'admin@updatepilot.local' || normalized === 'admin') &&
+          password === defaultPassword &&
+          (await userRepo.count()) === 0
+        ) {
+          const { data: createdAuth } = await supabase.auth.admin.createUser({
+            email: 'admin@updatepilot.local',
+            password: defaultPassword,
+            email_confirm: true,
+            user_metadata: { name: 'Local Administrator', role: 'ADMIN' },
+          });
+          if (createdAuth?.user) {
+            await userRepo.create({
+              id: createdAuth.user.id,
+              email: 'admin@updatepilot.local',
+              name: 'Local Administrator',
+              passwordHash: '',
+              role: 'ADMIN',
+            });
+            const retrySignIn = await supabase.auth.signInWithPassword({
+              email: 'admin@updatepilot.local',
+              password: defaultPassword,
+            });
+            authData = retrySignIn.data;
+            authErr = retrySignIn.error;
+          }
+        }
 
         if (authData?.user && !authErr) {
           const profile = await userRepo.findById(authData.user.id);
@@ -92,9 +124,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Bootstrap default administrator automatically on an empty database if signing in with default admin credentials
-    const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'Password123!';
     if (
       !user &&
+      !isSupabaseConfigured() &&
       (normalized === 'admin@updatepilot.local' || normalized === 'admin') &&
       password === defaultPassword &&
       (await userRepo.count()) === 0

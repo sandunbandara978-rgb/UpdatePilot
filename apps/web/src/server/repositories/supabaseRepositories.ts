@@ -301,23 +301,29 @@ export class SupabaseDeviceRepository implements IDeviceRepository {
 
   async setPairingCode(id: string, code: string, expiresAt: Date): Promise<void> {
     const supabase = getSupabaseAdmin();
-    await supabase
+    const { error } = await supabase
       .from('devices')
       .update({
         pairing_code: code || null,
         pairing_code_expires_at: expiresAt.toISOString(),
       })
       .eq('id', id);
+    if (error) {
+      throw new Error(`Failed to save pairing code: ${error.message}`);
+    }
   }
 
   async createCredential(deviceId: string, tokenHash: string, salt: string): Promise<void> {
     const supabase = getSupabaseAdmin();
-    await supabase.from('agent_credentials').insert({
+    const { error } = await supabase.from('agent_credentials').insert({
       device_id: deviceId,
       token_hash: tokenHash,
       salt: salt,
       is_revoked: false,
     });
+    if (error) {
+      throw new Error(`Failed to store agent credential: ${error.message}`);
+    }
   }
 
   async findCredentialByToken(token: string): Promise<{ deviceId: string; isRevoked: boolean } | null> {

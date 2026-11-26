@@ -3,7 +3,7 @@ import { jsonSuccess, jsonError } from '@/server/apiResponse';
 import { SecurityAuth, SessionUser } from '@/server/security/auth';
 import { rateLimiter } from '@/server/security/rateLimiter';
 import { userRepo } from '@/server/repositories';
-import { isSupabaseConfigured, getSupabaseAdmin } from '@/lib/supabase/admin';
+import { isSupabaseConfigured, getSupabaseAdmin, createSupabaseAuthClient } from '@/lib/supabase/admin';
 import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
@@ -34,40 +34,46 @@ export async function POST(req: NextRequest) {
     const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'Password123!';
     if (isSupabaseConfigured()) {
       try {
-        const supabase = getSupabaseAdmin();
+        const supabaseAdmin = getSupabaseAdmin();
+        const supabaseAuth = createSupabaseAuthClient();
         const targetEmail = normalized.includes('@') ? normalized : `${normalized}@updatepilot.local`;
-        let { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
+        let { data: authData, error: authErr } = await supabaseAuth.auth.signInWithPassword({
           email: targetEmail,
           password,
         });
 
-        // Bootstrap default admin in Supabase Auth automatically on an empty database
+        // Bootstrap default admin in Supabase Auth automatically if admin profile does not exist yet
         if (
           (!authData?.user || authErr) &&
           (normalized === 'admin@updatepilot.local' || normalized === 'admin') &&
-          password === defaultPassword &&
-          (await userRepo.count()) === 0
+          password === defaultPassword
         ) {
-          const { data: createdAuth } = await supabase.auth.admin.createUser({
-            email: 'admin@updatepilot.local',
-            password: defaultPassword,
-            email_confirm: true,
-            user_metadata: { name: 'Local Administrator', role: 'ADMIN' },
-          });
-          if (createdAuth?.user) {
-            await userRepo.create({
-              id: createdAuth.user.id,
-              email: 'admin@updatepilot.local',
-              name: 'Local Administrator',
-              passwordHash: '',
-              role: 'ADMIN',
-            });
-            const retrySignIn = await supabase.auth.signInWithPassword({
+          const existingAdminProfile = await userRepo.findByEmail('admin@updatepilot.local');
+          if (!existingAdminProfile) {
+            const { data: createdAuth, error: createErr } = await supabaseAdmin.auth.admin.createUser({
               email: 'admin@updatepilot.local',
               password: defaultPassword,
+              email_confirm: true,
+              user_metadata: { name: 'Local Administrator', role: 'ADMIN' },
             });
-            authData = retrySignIn.data;
-            authErr = retrySignIn.error;
+            if (createErr) {
+              console.warn('Supabase default admin bootstrap error:', createErr.message);
+            }
+            if (createdAuth?.user) {
+              await userRepo.create({
+                id: createdAuth.user.id,
+                email: 'admin@updatepilot.local',
+                name: 'Local Administrator',
+                passwordHash: '',
+                role: 'ADMIN',
+              });
+              const retrySignIn = await createSupabaseAuthClient().auth.signInWithPassword({
+                email: 'admin@updatepilot.local',
+                password: defaultPassword,
+              });
+              authData = retrySignIn.data;
+              authErr = retrySignIn.error;
+            }
           }
         }
 

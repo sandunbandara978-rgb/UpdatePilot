@@ -73,9 +73,9 @@ export function getSupabaseAdmin(): SupabaseClient {
 /**
  * Ephemeral auth client for password sign-in so user JWTs never mutate the singleton service-role admin client.
  */
-export function createSupabaseAuthClient(): SupabaseClient {
+export function createSupabaseAuthClient(preferServiceRole = false): SupabaseClient {
   const { url, anonKey, serviceRoleKey } = getSupabaseEnv();
-  const key = anonKey || serviceRoleKey;
+  const key = preferServiceRole ? (serviceRoleKey || anonKey) : (anonKey || serviceRoleKey);
   if (!url || !key) {
     throw new Error('Missing Supabase configuration for authentication client.');
   }

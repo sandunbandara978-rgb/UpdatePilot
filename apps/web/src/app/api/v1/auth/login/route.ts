@@ -35,12 +35,21 @@ export async function POST(req: NextRequest) {
     if (isSupabaseConfigured()) {
       try {
         const supabaseAdmin = getSupabaseAdmin();
-        const supabaseAuth = createSupabaseAuthClient();
         const targetEmail = normalized.includes('@') ? normalized : `${normalized}@updatepilot.local`;
-        let { data: authData, error: authErr } = await supabaseAuth.auth.signInWithPassword({
+        let { data: authData, error: authErr } = await createSupabaseAuthClient().auth.signInWithPassword({
           email: targetEmail,
           password,
         });
+
+        // If anon key failed (e.g. misconfigured anon key), retry password check with ephemeral service-role auth client
+        if (authErr && /api key/i.test(authErr.message)) {
+          const retryWithService = await createSupabaseAuthClient(true).auth.signInWithPassword({
+            email: targetEmail,
+            password,
+          });
+          authData = retryWithService.data;
+          authErr = retryWithService.error;
+        }
 
         // Bootstrap default admin in Supabase Auth automatically if admin profile does not exist yet
         if (
@@ -57,7 +66,7 @@ export async function POST(req: NextRequest) {
               user_metadata: { name: 'Local Administrator', role: 'ADMIN' },
             });
             if (createErr) {
-              console.warn('Supabase default admin bootstrap error:', createErr.message);
+              return jsonError(`Supabase default admin bootstrap error: ${createErr.message}`, 'SUPABASE_AUTH_ERROR', 400);
             }
             if (createdAuth?.user) {
               await userRepo.create({
@@ -67,13 +76,25 @@ export async function POST(req: NextRequest) {
                 passwordHash: '',
                 role: 'ADMIN',
               });
-              const retrySignIn = await createSupabaseAuthClient().auth.signInWithPassword({
+              let retrySignIn = await createSupabaseAuthClient().auth.signInWithPassword({
                 email: 'admin@updatepilot.local',
                 password: defaultPassword,
               });
+              if (retrySignIn.error && /api key/i.test(retrySignIn.error.message)) {
+                retrySignIn = await createSupabaseAuthClient(true).auth.signInWithPassword({
+                  email: 'admin@updatepilot.local',
+                  password: defaultPassword,
+                });
+              }
               authData = retrySignIn.data;
               authErr = retrySignIn.error;
             }
+          } else if (authErr) {
+            return jsonError(
+              `Default admin exists in profiles but Supabase sign-in returned: ${authErr.message}`,
+              'INVALID_CREDENTIALS',
+              401
+            );
           }
         }
 

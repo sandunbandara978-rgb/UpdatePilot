@@ -46,7 +46,32 @@ export function getSupabaseEnv() {
     }
   }
 
-  return { url: url.trim(), anonKey: anonKey.trim(), serviceRoleKey: serviceRoleKey.trim() };
+  // Strip accidental quotes, whitespace, or endpoint subpaths like /rest/v1 or /auth/v1
+  let normalizedUrl = url.trim().replace(/^["']|["']$/g, '');
+  let rawHadSubpath = false;
+  if (normalizedUrl) {
+    try {
+      const parsed = new URL(normalizedUrl);
+      rawHadSubpath = parsed.pathname !== '/' && parsed.pathname !== '';
+      if (
+        /\.supabase\.(co|in|net)$/i.test(parsed.hostname) ||
+        /\/(rest|auth|storage|functions)\/v1/i.test(parsed.pathname)
+      ) {
+        normalizedUrl = parsed.origin;
+      } else {
+        normalizedUrl = normalizedUrl.replace(/\/+$/, '');
+      }
+    } catch {
+      // leave normalizedUrl as trimmed string
+    }
+  }
+
+  return {
+    url: normalizedUrl,
+    anonKey: anonKey.trim().replace(/^["']|["']$/g, ''),
+    serviceRoleKey: serviceRoleKey.trim().replace(/^["']|["']$/g, ''),
+    rawHadSubpath,
+  };
 }
 
 export function getSupabaseAdmin(): SupabaseClient {

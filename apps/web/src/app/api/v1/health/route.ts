@@ -18,12 +18,18 @@ export async function GET() {
     dbProvider = 'supabase';
     try {
       const supabase = getSupabaseAdmin();
-      const { error } = await supabase.from('profiles').select('id', { count: 'exact', head: true });
-      if (error) {
+      const { error: dbErr } = await supabase.from('profiles').select('id').limit(1);
+      if (dbErr) {
         dbStatus = 'error';
-        dbError = error.message;
+        dbError = dbErr.message;
       } else {
-        dbStatus = 'connected';
+        const { error: authErr } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1 });
+        if (authErr) {
+          dbStatus = 'error';
+          dbError = `Auth check failed: ${authErr.message}`;
+        } else {
+          dbStatus = 'connected';
+        }
       }
     } catch (err: unknown) {
       dbStatus = 'error';
@@ -56,6 +62,7 @@ export async function GET() {
         hasAnonKey: Boolean(supabaseEnv.anonKey),
         hasServiceRoleKey: Boolean(supabaseEnv.serviceRoleKey),
         hasDatabaseUrl: hasDb,
+        urlNormalizedFromSubpath: supabaseEnv.rawHadSubpath,
       },
     },
     storageMode: dbProvider,
